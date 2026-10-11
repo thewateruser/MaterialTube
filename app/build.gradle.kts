@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -19,7 +18,7 @@ val hasReleaseKey = signing.getProperty("storeFile")?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "dev.materialtube"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "dev.materialtube"
