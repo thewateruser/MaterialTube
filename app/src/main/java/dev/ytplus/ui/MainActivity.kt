@@ -236,7 +236,10 @@ class MainActivity : ComponentActivity() {
                 composable("home") {
                     TopLevel("YT Plus") {
                         val vm = rememberFeedViewModel("home:$signedIn", { Graph.api.home() }, { Graph.api.continuation(it) })
-                        FeedList(vm, openVideo, openChannel)
+                        FeedList(
+                            vm, openVideo, openChannel,
+                            emptyText = if (signedIn) "No recommendations yet. Watch a few videos and pull to refresh." else "Sign in (Library → Sign in) to get your personalized recommendations.",
+                        )
                     }
                 }
                 composable("subs") {
