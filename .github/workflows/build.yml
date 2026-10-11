@@ -42,6 +42,10 @@ jobs:
           YTPLUS_KEY_PASSWORD: ${{ secrets.YTPLUS_KEY_PASSWORD }}
         run: ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
 
+      - name: Read version
+        id: version
+        run: echo "name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+
       - name: Rename APKs
         run: |
           mkdir -p out
@@ -62,8 +66,21 @@ jobs:
           YTPLUS_LIVE_TEST: "1"
         run: ./gradlew --no-daemon :app:testDebugUnitTest --tests 'dev.ytplus.data.LiveApiTest' --rerun-tasks
 
+      # Publishes on a pushed v* tag, a manual run, or a commit whose message contains [release].
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', steps.version.outputs.name) }}
+          target_commitish: ${{ github.sha }}
+          name: YT Plus ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', steps.version.outputs.name) }}
+          prerelease: true
           files: out/*.apk
+          body: |
+            YouTube client with Google sign-in that needs no MicroG, root or patched APK.
+
+            **Install `YTPlus-release.apk`.** Then open Library → Sign in, tap "Copy code & open google.com/device", paste the code and approve.
+
+            `YTPlus-debug.apk` is a debug build (larger, installs alongside as a separate app).
+
+            Note: until a release keystore is configured (see README), each build is signed with a different key. Uninstall the previous version before installing a new one.
