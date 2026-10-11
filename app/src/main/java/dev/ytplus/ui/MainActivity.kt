@@ -160,7 +160,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun setImmersive(on: Boolean) {
+    private fun setSystemBarsHidden(on: Boolean) {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         if (on) {
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -182,7 +182,7 @@ class MainActivity : ComponentActivity() {
         val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
         val fullscreen = onWatch && landscape
 
-        LaunchedEffect(fullscreen) { setImmersive(fullscreen) }
+        LaunchedEffect(fullscreen) { setSystemBarsHidden(fullscreen) }
         LaunchedEffect(onWatch) {
             if (!onWatch) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
