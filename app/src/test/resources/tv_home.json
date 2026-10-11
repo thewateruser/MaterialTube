@@ -1,0 +1,28 @@
+{"contents":{"tvBrowseRenderer":{"content":{"tvSurfaceContentRenderer":{"content":{"sectionListRenderer":{
+ "contents":[
+  {"shelfRenderer":{"headerRenderer":{"shelfHeaderRenderer":{"title":{"runs":[{"text":"Recommended"}]}}},
+   "content":{"horizontalListRenderer":{"items":[
+     {"tileRenderer":{"contentId":"abc123def45","contentType":"TILE_CONTENT_TYPE_VIDEO",
+       "header":{"tileHeaderRenderer":{"thumbnail":{"thumbnails":[{"url":"https://i.ytimg.com/a_small.jpg","width":120},{"url":"https://i.ytimg.com/a_big.jpg","width":480}]},
+         "thumbnailOverlays":[{"thumbnailOverlayTimeStatusRenderer":{"text":{"simpleText":"12:34"},"style":"DEFAULT"}},{"thumbnailOverlayResumePlaybackRenderer":{"percentDurationWatched":40}}]}},
+       "metadata":{"tileMetadataRenderer":{"title":{"simpleText":"First video"},"lines":[
+         {"lineRenderer":{"items":[{"lineItemRenderer":{"text":{"runs":[{"text":"Some Channel"}]}}}]}},
+         {"lineRenderer":{"items":[{"lineItemRenderer":{"text":{"simpleText":"1.2M views"}}},{"lineItemRenderer":{"text":{"simpleText":"•"}}},{"lineItemRenderer":{"text":{"simpleText":"3 days ago"}}}]}}]}},
+       "onSelectCommand":{"watchEndpoint":{"videoId":"abc123def45"}},
+       "menu":{"menuRenderer":{"items":[{"menuNavigationItemRenderer":{"navigationEndpoint":{"browseEndpoint":{"browseId":"UCchannel000000000000000"}}}}]}}}},
+     {"tileRenderer":{"contentId":"UCxyz","contentType":"TILE_CONTENT_TYPE_CHANNEL","metadata":{"tileMetadataRenderer":{"title":{"simpleText":"A channel"}}}}},
+     {"tileRenderer":{"contentId":"live0000001","contentType":"TILE_CONTENT_TYPE_VIDEO",
+       "header":{"tileHeaderRenderer":{"thumbnailOverlays":[{"thumbnailOverlayTimeStatusRenderer":{"text":{"simpleText":"LIVE"},"style":"LIVE"}}]}},
+       "metadata":{"tileMetadataRenderer":{"title":{"simpleText":"Live now"}}},
+       "onSelectCommand":{"watchEndpoint":{"videoId":"live0000001"}}}}
+   ],"continuations":[{"nextContinuationData":{"continuation":"ROW_TOKEN"}}]}}}},
+  {"shelfRenderer":{"title":{"simpleText":"Lockups"},"content":{"horizontalListRenderer":{"items":[
+     {"lockupViewModel":{"contentId":"lockup00001","contentType":"LOCKUP_CONTENT_TYPE_VIDEO",
+       "contentImage":{"thumbnailViewModel":{"image":{"sources":[{"url":"https://i.ytimg.com/l.jpg","width":360}]},
+         "overlays":[{"thumbnailOverlayBadgeViewModel":{"thumbnailBadges":[{"thumbnailBadgeViewModel":{"text":"1:02:03"}}]}}]}},
+       "metadata":{"lockupMetadataViewModel":{"title":{"content":"Lockup video"},
+         "metadata":{"contentMetadataViewModel":{"metadataRows":[{"metadataParts":[{"text":{"content":"Lockup Channel"}}]},{"metadataParts":[{"text":{"content":"5K views"}},{"text":{"content":"1 year ago"}}]}]}}}}}}
+  ]}}}}
+ ],
+ "continuations":[{"nextContinuationData":{"continuation":"PAGE_TOKEN"}}]
+}}}}}}}

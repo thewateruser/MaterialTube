@@ -1,0 +1,10 @@
+{"contents":{"singleColumnWatchNextResults":{"results":{"results":{"contents":[
+  {"itemSectionRenderer":{"contents":[{"videoMetadataRenderer":{
+     "owner":{"videoOwnerRenderer":{"title":{"runs":[{"text":"Owner Name"}]},"thumbnail":{"thumbnails":[{"url":"https://yt3.ggpht.com/avatar.jpg","width":88}]},
+       "navigationEndpoint":{"browseEndpoint":{"browseId":"UCowner000000000000000"}}}},
+     "likeButton":{"likeButtonRenderer":{"likeStatus":"LIKE","likeCountText":{"simpleText":"1.5K"}}},
+     "subscribeButton":{"subscribeButtonRenderer":{"subscribed":true,"channelId":"UCowner000000000000000"}}}}]}}]}},
+ "pivot":{"pivotRenderer":{"contents":[{"shelfRenderer":{"content":{"horizontalListRenderer":{"items":[
+   {"tileRenderer":{"contentType":"TILE_CONTENT_TYPE_VIDEO","metadata":{"tileMetadataRenderer":{"title":{"simpleText":"Related one"}}},"onSelectCommand":{"watchEndpoint":{"videoId":"related0001"}}}},
+   {"tileRenderer":{"contentType":"TILE_CONTENT_TYPE_VIDEO","metadata":{"tileMetadataRenderer":{"title":{"simpleText":"Self"}}},"onSelectCommand":{"watchEndpoint":{"videoId":"current0001"}}}}
+ ]}}}}]}}}}}
