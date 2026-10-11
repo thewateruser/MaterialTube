@@ -1,4 +1,4 @@
-# YT Plus
+# MaterialTube
 
 An open-source Android YouTube client with **Google sign-in that doesn't need MicroG**, your
 **real personalized recommendations**, no ads, SponsorBlock, background play and picture-in-picture.
@@ -14,9 +14,9 @@ because the check runs inside Google's code.
 (With root, the patched APK can be *mounted* over the stock app so it keeps Google's signature.
 ReVanced/Morphe "root" installs already do that.)
 
-YT Plus is a separate client instead of a patched APK:
+MaterialTube is a separate client instead of a patched APK:
 
-| | ReVanced + MicroG | YT Plus |
+| | ReVanced + MicroG | MaterialTube |
 |---|---|---|
 | Needs MicroG / GmsCore | yes | **no** |
 | Needs root | no | no |
@@ -27,7 +27,7 @@ YT Plus is a separate client instead of a patched APK:
 
 ## How sign-in works
 
-YT Plus uses the same OAuth **device sign-in** that YouTube's smart-TV app uses:
+MaterialTube uses the same OAuth **device sign-in** that YouTube's smart-TV app uses:
 
 1. The app shows a short code.
 2. Tap **Copy code & open google.com/device**. Google's real sign-in page opens in Chrome,
@@ -56,19 +56,19 @@ you. That gives you:
 - **Background play** with media notification and lock-screen controls.
 - **Picture-in-picture** when you leave the app during a video.
 - Fullscreen in landscape, plus a mini-player while you browse.
-- Opens YouTube links and "Share → YT Plus".
+- Opens YouTube links and "Share → MaterialTube".
 
 ## Install
 
-Download the APK from the latest **Actions** run (artifact `YTPlus-apk`) or from **Releases**,
-then install `YTPlus-release.apk`.
+Download the APK from the latest **Actions** run (artifact `MaterialTube-apk`) or from **Releases**,
+then install `MaterialTube-release.apk`.
 
 ## Build
 
 ```bash
 ./gradlew :app:assembleRelease     # app/build/outputs/apk/release/
 ./gradlew :app:testDebugUnitTest   # parser tests
-YTPLUS_LIVE_TEST=1 ./gradlew :app:testDebugUnitTest --tests 'dev.ytplus.data.LiveApiTest'  # hits real YouTube
+MATERIALTUBE_LIVE_TEST=1 ./gradlew :app:testDebugUnitTest --tests 'dev.materialtube.data.LiveApiTest'  # hits real YouTube
 ```
 
 Requires JDK 17 and the Android SDK (compileSdk 36).
@@ -79,8 +79,8 @@ Without a key, release builds are signed with the CI runner's throwaway debug ke
 build has a different signature and you'd have to uninstall before updating. To sign every build
 with your own key, add these repository secrets:
 
-- `YTPLUS_KEYSTORE_BASE64`: `base64 -w0 release.jks`
-- `YTPLUS_KEYSTORE_PASSWORD`, `YTPLUS_KEY_ALIAS`, `YTPLUS_KEY_PASSWORD`
+- `MATERIALTUBE_KEYSTORE_BASE64`: `base64 -w0 release.jks`
+- `MATERIALTUBE_KEYSTORE_PASSWORD`, `MATERIALTUBE_KEY_ALIAS`, `MATERIALTUBE_KEY_PASSWORD`
 
 Locally, create `keystore.properties` with `storeFile`, `storePassword`, `keyAlias` and
 `keyPassword`.

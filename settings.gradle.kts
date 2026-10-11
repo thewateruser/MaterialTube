@@ -16,5 +16,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "YouTube-Plus"
+rootProject.name = "MaterialTube"
 include(":app")

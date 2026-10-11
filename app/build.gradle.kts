@@ -6,27 +6,27 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// Optional release signing: provide keystore.properties (local) or YTPLUS_* env vars (CI).
+// Optional release signing: provide keystore.properties (local) or MATERIALTUBE_* env vars (CI).
 val signing = Properties().apply {
     rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
     fun env(name: String, key: String) = System.getenv(name)?.takeIf { it.isNotBlank() }?.let { put(key, it) }
-    env("YTPLUS_KEYSTORE", "storeFile")
-    env("YTPLUS_KEYSTORE_PASSWORD", "storePassword")
-    env("YTPLUS_KEY_ALIAS", "keyAlias")
-    env("YTPLUS_KEY_PASSWORD", "keyPassword")
+    env("MATERIALTUBE_KEYSTORE", "storeFile")
+    env("MATERIALTUBE_KEYSTORE_PASSWORD", "storePassword")
+    env("MATERIALTUBE_KEY_ALIAS", "keyAlias")
+    env("MATERIALTUBE_KEY_PASSWORD", "keyPassword")
 }
 val hasReleaseKey = signing.getProperty("storeFile")?.takeIf { it.isNotBlank() }?.let { file(it).isFile } == true
 
 android {
-    namespace = "dev.ytplus"
+    namespace = "dev.materialtube"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.ytplus"
+        applicationId = "dev.materialtube"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     signingConfigs {
@@ -110,9 +110,11 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-dash:$media3")
     implementation("androidx.media3:media3-ui:$media3")
     implementation("androidx.media3:media3-session:$media3")
+    implementation("androidx.media3:media3-datasource-okhttp:$media3")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp-dnsoverhttps:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     // Stream extraction (signature/n-param deciphering etc.), same library NewPipe uses.
