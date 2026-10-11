@@ -136,7 +136,7 @@ fun CenteredLoading(modifier: Modifier = Modifier) {
 }
 
 /** Expressive "cookie" shape for avatars. */
-val AvatarShape: Shape @Composable get() = remember { MaterialShapes.Cookie9Sided.toShape() }
+val AvatarShape: Shape @Composable get() = MaterialShapes.Cookie9Sided.toShape()
 
 @Composable
 fun ErrorState(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
