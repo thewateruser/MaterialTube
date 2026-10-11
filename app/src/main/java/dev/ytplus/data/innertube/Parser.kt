@@ -133,7 +133,8 @@ object Parser {
 
     private fun lockup(l: JSONObject): VideoItem? {
         val type = l.str("contentType").orEmpty()
-        if (type.isNotEmpty() && "VIDEO" !in type) return null
+        // VIDEO, MUSIC (music videos) and SHORT are all playable; skip channels/playlists/etc.
+        if (type.isNotEmpty() && listOf("VIDEO", "MUSIC", "SHORT").none { it in type }) return null
         val id = l.str("contentId") ?: return null
         val meta = l.obj("metadata", "lockupMetadataViewModel")
         val rows = meta?.obj("metadata", "contentMetadataViewModel")?.arr("metadataRows")?.objects()
@@ -245,10 +246,15 @@ object Parser {
         val meta = root.obj("metadata", "channelMetadataRenderer")
         val header = root.obj("header")
         val sub = findFirst(root) { it.has("subscribeButtonRenderer") }?.obj("subscribeButtonRenderer")
+        val tvHeader = findFirst(root) { it.has("channelHeaderRenderer") }?.obj("channelHeaderRenderer")
         return ChannelPage(
             title = meta?.str("title")
+                ?: text(tvHeader?.opt("title"))
+                ?: findFirst(tvHeader) { it.has("title") }?.let { text(it.opt("title")) }
                 ?: findFirst(header) { it.has("title") }?.let { text(it.opt("title")) },
             avatar = bestThumb(meta?.obj("avatar"))
+                ?: bestThumb(tvHeader?.obj("avatar"))
+                ?: bestThumb(tvHeader?.obj("thumbnail"))
                 ?: findFirst(header) { it.has("avatar") }?.let { bestThumb(it.obj("avatar")) },
             subscribed = sub?.takeIf { it.has("subscribed") }?.optBoolean("subscribed"),
             feed = feed(root),

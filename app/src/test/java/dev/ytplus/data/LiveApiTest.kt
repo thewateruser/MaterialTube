@@ -113,27 +113,46 @@ class LiveApiTest {
             sts = Regex("(?:signatureTimestamp|sts)[:=](\\d{5})").find(js)?.groupValues?.get(1)?.toInt()
             println("base.js len=${js.length} sts=$sts clientId=${Regex("clientId:\"([^\"]+)\"").find(js)?.groupValues?.get(1)}")
         }
-        fun tryPlayer(label: String, version: String?, withSts: Boolean) {
-            val body = JSONObject().put("videoId", "dQw4w9WgXcQ")
-            if (withSts && sts != null) body.put("playbackContext", JSONObject().put("contentPlaybackContext", JSONObject().put("signatureTimestamp", sts)))
-            val ctx = api.context()
-            if (version != null) ctx.getJSONObject("client").put("clientVersion", version)
-            body.put("context", ctx)
+        val visitor = api.call("browse", JSONObject().put("browseId", "default"))
+            .optJSONObject("responseContext")?.optString("visitorData")
+        println("visitorData=${visitor?.take(20)}")
+        data class C(val name: String, val id: String, val version: String, val ua: String, val extra: (JSONObject) -> Unit = {})
+        val clients = listOf(
+            C("TVHTML5", "7", cver ?: InnerTube.CLIENT_VERSION, TvOAuth.TV_USER_AGENT),
+            C("TVHTML5_SIMPLY_EMBEDDED_PLAYER", "85", "2.0", TvOAuth.TV_USER_AGENT) {
+                it.put("thirdParty", JSONObject().put("embedUrl", "https://www.youtube.com/"))
+            },
+            C("WEB", "1", "2.20251010.00.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"),
+            C("MWEB", "2", "2.20251010.01.00", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36"),
+            C("ANDROID_VR", "28", "1.65.10", "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"),
+            C("IOS", "5", "20.10.4", "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"),
+            C("WEB_EMBEDDED_PLAYER", "56", "1.20251010.01.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0") {
+                it.put("thirdParty", JSONObject().put("embedUrl", "https://www.youtube.com/"))
+            },
+        )
+        for (c in clients) for (withVisitor in listOf(false, true)) {
+            if (withVisitor && visitor.isNullOrEmpty()) continue
+            val client = JSONObject().put("clientName", c.name).put("clientVersion", c.version).put("hl", "en").put("gl", "US")
+            if (c.name == "ANDROID_VR") client.put("androidSdkVersion", 32).put("osName", "Android").put("osVersion", "12L")
+            if (c.name == "IOS") client.put("deviceMake", "Apple").put("deviceModel", "iPhone16,2").put("osName", "iPhone").put("osVersion", "18.3.2.22D82")
+            if (withVisitor) client.put("visitorData", visitor)
+            val ctx = JSONObject().put("client", client)
+            c.extra(ctx)
+            val body = JSONObject().put("videoId", "dQw4w9WgXcQ").put("context", ctx).put("contentCheckOk", true).put("racyCheckOk", true)
+            if (sts != null) body.put("playbackContext", JSONObject().put("contentPlaybackContext", JSONObject().put("signatureTimestamp", sts)))
             val req = okhttp3.Request.Builder().url("${InnerTube.BASE_URL}/player?prettyPrint=false")
                 .post(okhttp3.RequestBody.create("application/json".toMediaType(), body.toString()))
-                .header("User-Agent", TvOAuth.TV_USER_AGENT)
+                .header("User-Agent", c.ua)
                 .header("Origin", "https://www.youtube.com")
-                .header("X-YouTube-Client-Name", "7")
-                .header("X-YouTube-Client-Version", version ?: InnerTube.CLIENT_VERSION)
+                .header("X-YouTube-Client-Name", c.id)
+                .header("X-YouTube-Client-Version", c.version)
+                .apply { if (withVisitor) header("X-Goog-Visitor-Id", visitor!!) }
                 .build()
-            val r = http.newCall(req).execute().use { JSONObject(it.body!!.string()) }
+            val r = runCatching { http.newCall(req).execute().use { JSONObject(it.body!!.string()) } }.getOrElse { JSONObject().put("err", it.toString()) }
             val ps = r.optJSONObject("playabilityStatus")
-            println("player[$label] status=${ps?.optString("status")} reason=${ps?.optString("reason")} title=${r.optJSONObject("videoDetails")?.optString("title")} tracking=${r.has("playbackTracking")} streaming=${r.has("streamingData")}")
+            val track = r.optJSONObject("playbackTracking")?.optJSONObject("videostatsPlaybackUrl")?.optString("baseUrl")
+            println("player[${c.name}${if (withVisitor) "+visitor" else ""}] status=${ps?.optString("status")} reason=${ps?.optString("reason")?.take(80)} title=${r.optJSONObject("videoDetails")?.optString("title")} tracking=${track?.take(60)} streaming=${r.has("streamingData")} err=${r.optString("err")}")
         }
-        tryPlayer("default", null, false)
-        tryPlayer("sts", null, true)
-        tryPlayer("liveVersion", cver ?: cverAlt, false)
-        tryPlayer("liveVersion+sts", cver ?: cverAlt, true)
     }
 
     @Test
