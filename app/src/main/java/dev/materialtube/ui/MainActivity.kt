@@ -36,12 +36,15 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.VideoLibrary
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.ShortNavigationBar
+import androidx.compose.material3.ShortNavigationBarItem
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -252,7 +255,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                composable("search") { TopLevel(null) { SearchScreen(openVideo, openChannel) } }
+                composable("search") { TopLevel("Search") { SearchScreen(openVideo, openChannel) } }
                 composable("library") {
                     TopLevel("Library") {
                         LibraryScreen(
@@ -321,9 +324,9 @@ private fun TopLevel(title: String?, content: @Composable () -> Unit) {
         title?.let {
             Text(
                 it,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                style = MaterialTheme.typography.headlineMediumEmphasized,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
             )
         }
         Box(Modifier.weight(1f)) { content() }
@@ -332,11 +335,15 @@ private fun TopLevel(title: String?, content: @Composable () -> Unit) {
 
 @Composable
 private fun Sub(title: String, nav: NavHostController, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-            Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLargeEmphasized) },
+            navigationIcon = {
+                FilledTonalIconButton(onClick = { nav.popBackStack() }, shapes = IconButtonDefaults.shapes()) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                }
+            },
+        )
         Box(Modifier.weight(1f)) { content() }
     }
 }
@@ -352,9 +359,9 @@ private val TABS = listOf(
 
 @Composable
 private fun BottomBar(nav: NavHostController, route: String?) {
-    NavigationBar {
+    ShortNavigationBar {
         TABS.forEach { tab ->
-            NavigationBarItem(
+            ShortNavigationBarItem(
                 selected = route == tab.route,
                 onClick = {
                     nav.navigate(tab.route) {
@@ -382,30 +389,36 @@ private fun MiniPlayer(onOpen: (String) -> Unit) {
         PlayerController.player.addListener(listener)
         onDispose { PlayerController.player.removeListener(listener) }
     }
-    HorizontalDivider()
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(64.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable { onOpen(current.videoId) }
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        onClick = { onOpen(current.videoId) },
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 3.dp,
+        shadowElevation = 6.dp,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
-        Thumbnail(
-            VideoItem(current.videoId, current.title, thumbnail = current.thumbnail),
-            Modifier.width(88.dp),
-            rounded = true,
-        )
-        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-            Text(current.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-            current.channel?.let {
-                Text(it, maxLines = 1, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            Modifier.height(68.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Thumbnail(
+                VideoItem(current.videoId, current.title, thumbnail = current.thumbnail),
+                Modifier.width(92.dp),
+                rounded = true,
+            )
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(current.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmallEmphasized)
+                current.channel?.let {
+                    Text(it, maxLines = 1, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
+            FilledIconButton(
+                onClick = { if (playing) PlayerController.player.pause() else PlayerController.player.play() },
+                shapes = IconButtonDefaults.shapes(),
+            ) {
+                Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/pause")
+            }
+            IconButton(onClick = { PlayerController.close() }) { Icon(Icons.Filled.Close, "Close") }
         }
-        IconButton(onClick = { if (playing) PlayerController.player.pause() else PlayerController.player.play() }) {
-            Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/pause")
-        }
-        IconButton(onClick = { PlayerController.close() }) { Icon(Icons.Filled.Close, "Close") }
     }
 }

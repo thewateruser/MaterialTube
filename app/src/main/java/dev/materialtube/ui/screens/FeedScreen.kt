@@ -8,7 +8,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -122,10 +124,20 @@ fun FeedList(
     when {
         vm.loading && vm.shelves.isEmpty() -> CenteredLoading(modifier)
         vm.error != null && vm.shelves.isEmpty() -> ErrorState(vm.error!!, { vm.load() }, modifier)
-        else -> PullToRefreshBox(
+        else -> {
+            val pullState = rememberPullToRefreshState()
+            PullToRefreshBox(
             isRefreshing = vm.refreshing,
             onRefresh = { vm.load(refresh = true) },
             modifier = modifier.fillMaxSize(),
+            state = pullState,
+            indicator = {
+                PullToRefreshDefaults.LoadingIndicator(
+                    state = pullState,
+                    isRefreshing = vm.refreshing,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            },
         ) {
             val nearEnd by remember {
                 derivedStateOf {
@@ -153,9 +165,9 @@ fun FeedList(
                         item(key = "h$i") {
                             Text(
                                 title,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 4.dp),
+                                style = MaterialTheme.typography.titleLargeEmphasized,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
                             )
                         }
                     }
@@ -166,11 +178,12 @@ fun FeedList(
                 if (vm.canLoadMore) {
                     item {
                         Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
+                            LoadingIndicator()
                         }
                     }
                 }
             }
+        }
         }
     }
 }

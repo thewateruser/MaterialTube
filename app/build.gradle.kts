@@ -86,14 +86,21 @@ tasks.withType<Test>().configureEach {
 
 kotlin {
     jvmToolchain(17)
+    compilerOptions {
+        optIn.addAll(
+            "androidx.compose.material3.ExperimentalMaterial3Api",
+            "androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
+        )
+    }
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2025.06.00")
+    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
+    // Material 3 Expressive (MaterialExpressiveTheme, LoadingIndicator, ToggleButton, MaterialShapes...)
+    implementation("androidx.compose.material3:material3:1.5.0-beta01")
+    implementation("androidx.compose.material:material-icons-extended:1.7.8")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
 

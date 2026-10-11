@@ -2,11 +2,14 @@
 
 package dev.materialtube.ui.screens
 
+import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,31 +23,41 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Comment
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.HighQuality
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -53,7 +66,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -68,11 +82,15 @@ import dev.materialtube.data.LikeStatus
 import dev.materialtube.data.NextInfo
 import dev.materialtube.data.VideoItem
 import dev.materialtube.player.PlayerController
+import dev.materialtube.streams.Comment
+import dev.materialtube.streams.Comments
+import dev.materialtube.ui.components.AvatarShape
 import dev.materialtube.ui.components.CompactVideoRow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.schabi.newpipe.extractor.Page
 
 class WatchViewModel(private val videoId: String) : ViewModel() {
     var next by mutableStateOf<NextInfo?>(null)
@@ -83,6 +101,23 @@ class WatchViewModel(private val videoId: String) : ViewModel() {
         private set
     var subscribed by mutableStateOf<Boolean?>(null)
         private set
+
+    // Comments
+    var comments by mutableStateOf<List<Comment>>(emptyList())
+        private set
+    var commentCount by mutableStateOf<Int?>(null)
+        private set
+    var commentsState by mutableStateOf(CommentsState.Loading)
+        private set
+    private var commentsNext: Page? = null
+    private var loadingMoreComments = false
+    val canLoadMoreComments get() = commentsNext != null
+
+    /** Replies per comment id, loaded on demand. */
+    val replies = mutableStateMapOf<String, List<Comment>>()
+    private val repliesNext = mutableMapOf<String, Page?>()
+
+    enum class CommentsState { Loading, Ready, Disabled, Error }
 
     init {
         viewModelScope.launch {
@@ -98,7 +133,57 @@ class WatchViewModel(private val videoId: String) : ViewModel() {
                 loading = false
             }
         }
+        loadComments()
     }
+
+    fun loadComments() {
+        commentsState = CommentsState.Loading
+        viewModelScope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) { Comments.first(videoId) }
+                comments = page.items
+                commentsNext = page.next
+                commentCount = page.count
+                commentsState = if (page.disabled) CommentsState.Disabled else CommentsState.Ready
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                commentsState = CommentsState.Error
+            }
+        }
+    }
+
+    fun loadMoreComments() {
+        val page = commentsNext ?: return
+        if (loadingMoreComments) return
+        loadingMoreComments = true
+        viewModelScope.launch {
+            try {
+                val more = withContext(Dispatchers.IO) { Comments.more(videoId, page) }
+                val seen = comments.map { it.id }.toHashSet()
+                comments = comments + more.items.filter { seen.add(it.id) }
+                commentsNext = more.next
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            } finally {
+                loadingMoreComments = false
+            }
+        }
+    }
+
+    fun loadReplies(comment: Comment) {
+        val page = if (comment.id in replies) repliesNext[comment.id] else comment.repliesPage
+        page ?: return
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { Comments.more(videoId, page) } }.onSuccess {
+                replies[comment.id] = replies[comment.id].orEmpty() + it.items
+                repliesNext[comment.id] = it.next
+            }
+        }
+    }
+
+    fun hasMoreReplies(comment: Comment) = comment.id in replies && repliesNext[comment.id] != null
 
     fun toggleLike(target: LikeStatus, onError: (String) -> Unit) {
         val previous = like
@@ -159,7 +244,7 @@ fun VideoPlayer(
             onRelease = { it.player = null },
             modifier = Modifier.fillMaxSize(),
         )
-        if (loading) CircularProgressIndicator(Modifier.align(Alignment.Center))
+        if (loading) LoadingIndicator(Modifier.align(Alignment.Center))
         error?.let { msg ->
             Column(
                 Modifier.align(Alignment.Center).padding(16.dp),
@@ -167,7 +252,7 @@ fun VideoPlayer(
             ) {
                 Text("Playback failed: $msg", color = Color.White, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(8.dp))
-                Button(onClick = { PlayerController.retry() }) { Text("Retry") }
+                Button(onClick = { PlayerController.retry() }, shapes = ButtonDefaults.shapes()) { Text("Retry") }
             }
         }
     }
@@ -189,6 +274,7 @@ fun WatchScreen(
     val vm: WatchViewModel = viewModel(key = "watch-$videoId") { WatchViewModel(videoId) }
     val context = LocalContext.current
     val toast: (String) -> Unit = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+    var showComments by remember { mutableStateOf(false) }
 
     if (fullscreen || inPip) {
         VideoPlayer(Modifier.fillMaxSize(), fullscreen = true, showControls = !inPip, onToggleFullscreen = onToggleFullscreen)
@@ -205,97 +291,147 @@ fun WatchScreen(
         val np = nowPlaying
         val next = vm.next
         LazyColumn(Modifier.fillMaxSize()) {
+            // Title + description card
             item {
                 var expanded by remember { mutableStateOf(false) }
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { expanded = !expanded }
-                        .animateContentSize()
-                        .padding(12.dp),
+                Surface(
+                    onClick = { expanded = !expanded },
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp),
                 ) {
-                    Text(
-                        np?.title?.ifEmpty { null } ?: hint?.title ?: "",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = if (expanded) Int.MAX_VALUE else 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    np?.details?.viewCount?.let {
+                    Column(Modifier.animateContentSize().padding(16.dp)) {
                         Text(
-                            "%,d views".format(it),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            np?.title?.ifEmpty { null } ?: hint?.title ?: "",
+                            style = MaterialTheme.typography.titleLargeEmphasized,
+                            maxLines = if (expanded) Int.MAX_VALUE else 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                    }
-                    val description = np?.details?.description
-                    if (expanded && !description.isNullOrBlank()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(description, style = MaterialTheme.typography.bodyMedium)
+                        val meta = listOfNotNull(
+                            np?.details?.viewCount?.let { "%,d views".format(it) },
+                            hint?.meta?.substringAfter(" • ", "")?.ifEmpty { null },
+                        ).joinToString(" • ")
+                        if (meta.isNotEmpty()) {
+                            Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        val description = np?.details?.description
+                        if (!description.isNullOrBlank()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                description,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = if (expanded) Int.MAX_VALUE else 2,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (!expanded) {
+                                Text("more", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
                     }
                 }
             }
+            // Channel row
             item {
                 val channelId = next?.channelId ?: np?.channelId
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Row(
                         Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(enabled = channelId != null) { channelId?.let(onChannel) },
+                            .clip(MaterialTheme.shapes.medium)
+                            .clickable(enabled = channelId != null) { channelId?.let(onChannel) }
+                            .padding(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         AsyncImage(
                             model = next?.channelAvatar,
                             contentDescription = null,
-                            modifier = Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+                            modifier = Modifier.size(44.dp).clip(AvatarShape).background(MaterialTheme.colorScheme.primaryContainer),
                         )
-                        Spacer(Modifier.size(10.dp))
+                        Spacer(Modifier.size(12.dp))
                         Text(
                             next?.channelName ?: np?.channel ?: "",
-                            style = MaterialTheme.typography.titleSmall,
+                            style = MaterialTheme.typography.titleMediumEmphasized,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                     if (signedIn && channelId != null) {
                         val subscribed = vm.subscribed == true
-                        Button(
-                            onClick = { vm.toggleSubscribe(channelId, toast) },
-                            colors = if (subscribed) ButtonDefaults.filledTonalButtonColors() else ButtonDefaults.buttonColors(),
-                        ) { Text(if (subscribed) "Subscribed" else "Subscribe") }
+                        ToggleButton(
+                            checked = subscribed,
+                            onCheckedChange = { vm.toggleSubscribe(channelId, toast) },
+                        ) {
+                            if (subscribed) {
+                                Icon(Icons.Outlined.NotificationsActive, null, Modifier.size(ToggleButtonDefaults.IconSize))
+                                Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
+                            }
+                            Text(if (subscribed) "Subscribed" else "Subscribe")
+                        }
                     }
                 }
             }
+            // Actions
             item {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (signedIn) {
-                        FilledTonalButton(onClick = { vm.toggleLike(LikeStatus.LIKE, toast) }) {
-                            Icon(if (vm.like == LikeStatus.LIKE) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp, "Like")
-                            next?.likeCountText?.let { Text("  $it") }
-                        }
-                        FilledTonalButton(onClick = { vm.toggleLike(LikeStatus.DISLIKE, toast) }) {
-                            Icon(if (vm.like == LikeStatus.DISLIKE) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown, "Dislike")
+                        Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupGap)) {
+                            ToggleButton(
+                                checked = vm.like == LikeStatus.LIKE,
+                                onCheckedChange = { vm.toggleLike(LikeStatus.LIKE, toast) },
+                            ) {
+                                Icon(
+                                    if (vm.like == LikeStatus.LIKE) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                                    "Like",
+                                    Modifier.size(ToggleButtonDefaults.IconSize),
+                                )
+                                next?.likeCountText?.let {
+                                    Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
+                                    Text(it)
+                                }
+                            }
+                            ToggleButton(
+                                checked = vm.like == LikeStatus.DISLIKE,
+                                onCheckedChange = { vm.toggleLike(LikeStatus.DISLIKE, toast) },
+                            ) {
+                                Icon(
+                                    if (vm.like == LikeStatus.DISLIKE) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
+                                    "Dislike",
+                                    Modifier.size(ToggleButtonDefaults.IconSize),
+                                )
+                            }
                         }
                     }
-                    QualityChip(np?.height, np?.availableHeights.orEmpty())
-                    AssistChip(
-                        onClick = { share(context, videoId) },
-                        label = { Text("Share") },
-                        leadingIcon = { Icon(Icons.Filled.Share, null) },
-                    )
+                    QualityButton(np?.height, np?.availableHeights.orEmpty())
+                    FilledTonalButton(onClick = { share(context, videoId) }, shapes = ButtonDefaults.shapes()) {
+                        Icon(Icons.Filled.Share, null, Modifier.size(ButtonDefaults.IconSize))
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text("Share")
+                    }
                 }
+            }
+            // Comments teaser
+            item {
+                CommentsTeaser(vm) { showComments = true }
+            }
+            item {
+                Text(
+                    "Up next",
+                    style = MaterialTheme.typography.titleLargeEmphasized,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
+                )
             }
             if (vm.loading) {
                 item {
-                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { LoadingIndicator() }
                 }
             }
             items(next?.related.orEmpty(), key = { it.id }) { v ->
@@ -303,19 +439,158 @@ fun WatchScreen(
             }
         }
     }
+
+    if (showComments) {
+        CommentsSheet(vm, onDismiss = { showComments = false })
+    }
+}
+
+private val ButtonGroupGap = 2.dp
+
+@Composable
+private fun CommentsTeaser(vm: WatchViewModel, onOpen: () -> Unit) {
+    Surface(
+        onClick = onOpen,
+        enabled = vm.commentsState == WatchViewModel.CommentsState.Ready,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Outlined.Comment, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.size(8.dp))
+                Text("Comments", style = MaterialTheme.typography.titleMediumEmphasized)
+                vm.commentCount?.let {
+                    Spacer(Modifier.size(8.dp))
+                    Text("%,d".format(it), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            when (vm.commentsState) {
+                WatchViewModel.CommentsState.Loading -> LoadingIndicator(Modifier.size(32.dp))
+                WatchViewModel.CommentsState.Disabled ->
+                    Text("Comments are turned off", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                WatchViewModel.CommentsState.Error -> TextButton(onClick = vm::loadComments) { Text("Couldn't load comments · Retry") }
+                WatchViewModel.CommentsState.Ready -> {
+                    val top = vm.comments.firstOrNull()
+                    if (top == null) {
+                        Text("No comments yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AsyncImage(
+                                model = top.avatar,
+                                contentDescription = null,
+                                modifier = Modifier.size(28.dp).clip(AvatarShape).background(MaterialTheme.colorScheme.secondaryContainer),
+                            )
+                            Spacer(Modifier.size(10.dp))
+                            Text(commentText(top), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
-private fun QualityChip(current: Int?, heights: List<Int>) {
+private fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Comments", style = MaterialTheme.typography.headlineSmallEmphasized)
+            vm.commentCount?.let {
+                Spacer(Modifier.size(8.dp))
+                Text("%,d".format(it), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        LazyColumn(Modifier.fillMaxWidth()) {
+            items(vm.comments, key = { it.id }) { c ->
+                CommentRow(c, isReply = false)
+                val loaded = vm.replies[c.id]
+                loaded?.forEach { r -> CommentRow(r, isReply = true) }
+                val canExpand = (loaded == null && c.replyCount > 0 && c.repliesPage != null) || vm.hasMoreReplies(c)
+                if (canExpand) {
+                    TextButton(
+                        onClick = { vm.loadReplies(c) },
+                        modifier = Modifier.padding(start = 60.dp),
+                    ) {
+                        Text(if (loaded == null) "${c.replyCount} ${if (c.replyCount == 1) "reply" else "replies"}" else "More replies")
+                    }
+                }
+            }
+            if (vm.canLoadMoreComments) {
+                item {
+                    LaunchedEffect(vm.comments.size) { vm.loadMoreComments() }
+                    Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { LoadingIndicator() }
+                }
+            }
+            item { Spacer(Modifier.navigationBarsPadding().height(16.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun CommentRow(c: Comment, isReply: Boolean) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = if (isReply) 60.dp else 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp),
+    ) {
+        AsyncImage(
+            model = c.avatar,
+            contentDescription = null,
+            modifier = Modifier.size(if (isReply) 28.dp else 36.dp).clip(AvatarShape).background(MaterialTheme.colorScheme.secondaryContainer),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (c.pinned) {
+                    Icon(Icons.Filled.PushPin, "Pinned", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.size(4.dp))
+                }
+                val authorStyle = MaterialTheme.typography.labelLarge
+                if (c.byUploader) {
+                    Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primaryContainer) {
+                        Text(c.author, style = authorStyle, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp))
+                    }
+                } else {
+                    Text(c.author, style = authorStyle)
+                }
+                c.published?.let {
+                    Text("  ·  $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(commentText(c), style = MaterialTheme.typography.bodyMedium)
+            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.ThumbUp, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                c.likes?.let {
+                    Spacer(Modifier.size(4.dp))
+                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (c.hearted) {
+                    Spacer(Modifier.size(12.dp))
+                    Icon(Icons.Filled.Favorite, "Hearted by creator", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+    }
+}
+
+private fun commentText(c: Comment): AnnotatedString =
+    if (c.isHtml) AnnotatedString.fromHtml(c.text) else AnnotatedString(c.text)
+
+@Composable
+private fun QualityButton(current: Int?, heights: List<Int>) {
     if (heights.isEmpty()) return
     var open by remember { mutableStateOf(false) }
     Box {
-        AssistChip(
-            onClick = { open = true },
-            label = { Text(current?.let { "${it}p" } ?: "Auto") },
-            leadingIcon = { Icon(Icons.Filled.HighQuality, null) },
-        )
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        FilledTonalButton(onClick = { open = true }, shapes = ButtonDefaults.shapes()) {
+            Icon(Icons.Filled.HighQuality, null, Modifier.size(ButtonDefaults.IconSize))
+            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+            Text(current?.let { "${it}p" } ?: "Auto")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, shape = MaterialTheme.shapes.large) {
             heights.forEach { h ->
                 DropdownMenuItem(
                     text = { Text("${h}p" + if (h == current) "  ✓" else "") },
@@ -329,9 +604,9 @@ private fun QualityChip(current: Int?, heights: List<Int>) {
     }
 }
 
-private fun share(context: android.content.Context, videoId: String) {
-    val intent = android.content.Intent(android.content.Intent.ACTION_SEND)
+private fun share(context: Context, videoId: String) {
+    val intent = Intent(Intent.ACTION_SEND)
         .setType("text/plain")
-        .putExtra(android.content.Intent.EXTRA_TEXT, "https://youtu.be/$videoId")
-    context.startActivity(android.content.Intent.createChooser(intent, "Share"))
+        .putExtra(Intent.EXTRA_TEXT, "https://youtu.be/$videoId")
+    context.startActivity(Intent.createChooser(intent, "Share"))
 }

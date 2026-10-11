@@ -64,7 +64,7 @@ jobs:
         continue-on-error: true
         env:
           MATERIALTUBE_LIVE_TEST: "1"
-        run: ./gradlew --no-daemon :app:testDebugUnitTest --tests 'dev.materialtube.data.LiveApiTest' --rerun-tasks
+        run: ./gradlew --no-daemon :app:testDebugUnitTest --tests '*Live*' --rerun-tasks
 
       # Publishes on a pushed v* tag, a manual run, or a commit whose message contains [release].
       - name: Publish release

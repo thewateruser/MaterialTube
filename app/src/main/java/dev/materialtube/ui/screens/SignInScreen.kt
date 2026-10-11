@@ -18,7 +18,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -88,7 +90,7 @@ class SignInViewModel : ViewModel() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                status = "Couldn't reach Google: ${e.message}"
+                status = "Couldn't reach Google (${e.message}). Check your connection; if you use Private DNS or an ad-blocking DNS/VPN, make sure it doesn't block youtube.com, then get a new code."
             }
         }
     }
@@ -111,7 +113,7 @@ fun SignInScreen(onDone: () -> Unit, onSkip: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Spacer(Modifier.height(24.dp))
-        Text("Sign in with Google", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Sign in with Google", style = MaterialTheme.typography.displaySmallEmphasized, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
         Text(
             "Your home feed, subscriptions, history and likes stay in sync with your YouTube account, " +
                 "so recommendations keep working. You approve the sign-in on Google's own page (no MicroG needed), " +
@@ -123,23 +125,33 @@ fun SignInScreen(onDone: () -> Unit, onSkip: () -> Unit) {
         val dc = vm.code
         if (dc != null) {
             Text("1. Copy this code", style = MaterialTheme.typography.titleMedium)
-            SelectionContainer {
-                Text(dc.userCode, fontSize = 34.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer) {
+                SelectionContainer {
+                    Text(
+                        dc.userCode,
+                        fontSize = 34.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 18.dp),
+                    )
+                }
             }
             Text("2. Open Google's page, paste the code, pick your account and allow access", textAlign = TextAlign.Center)
             Button(
                 onClick = { openDevicePage(context, dc) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Copy code & open google.com/device") }
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shapes = ButtonDefaults.shapes(),
+            ) { Text("Copy code & open google.com/device", style = MaterialTheme.typography.titleMedium) }
             Text(
                 "Tip: on another device you can also go to ${dc.verificationUrl} and type the code.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-            CircularProgressIndicator()
+            LoadingIndicator()
         } else if (!vm.done) {
-            OutlinedButton(onClick = { vm.start() }) { Text("Get a new code") }
+            OutlinedButton(onClick = { vm.start() }, shapes = ButtonDefaults.shapes()) { Text("Get a new code") }
         }
         vm.status?.let { Text(it, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         TextButton(onClick = onSkip) { Text("Continue without signing in") }

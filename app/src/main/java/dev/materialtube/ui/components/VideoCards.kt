@@ -15,7 +15,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toShape
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,7 +42,7 @@ fun Thumbnail(item: VideoItem, modifier: Modifier = Modifier, rounded: Boolean =
     Box(
         modifier
             .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(if (rounded) 10.dp else 0.dp))
+            .clip(RoundedCornerShape(if (rounded) 20.dp else 0.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
     ) {
         AsyncImage(
@@ -79,11 +84,11 @@ fun VideoCard(item: VideoItem, onClick: () -> Unit, onChannel: ((String) -> Unit
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
         Thumbnail(item, Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
-        Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(item.title, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 2, overflow = TextOverflow.Ellipsis)
         val sub = listOfNotNull(item.channel, item.meta).joinToString(" • ")
         if (sub.isNotEmpty()) {
             Text(
@@ -127,8 +132,11 @@ fun CompactVideoRow(item: VideoItem, onClick: () -> Unit) {
 
 @Composable
 fun CenteredLoading(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingIndicator() }
 }
+
+/** Expressive "cookie" shape for avatars. */
+val AvatarShape: Shape @Composable get() = remember { MaterialShapes.Cookie9Sided.toShape() }
 
 @Composable
 fun ErrorState(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
@@ -139,6 +147,6 @@ fun ErrorState(message: String, onRetry: () -> Unit, modifier: Modifier = Modifi
     ) {
         Text(message, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
-        Button(onClick = onRetry) { Text("Retry") }
+        Button(onClick = onRetry, shapes = ButtonDefaults.shapes()) { Text("Retry") }
     }
 }

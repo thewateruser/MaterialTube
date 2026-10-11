@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.WatchLater
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import dev.materialtube.ui.components.AvatarShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -63,7 +65,8 @@ fun SearchScreen(onVideo: (VideoItem) -> Unit, onChannel: (String) -> Unit) {
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { query = text.trim() }),
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         )
         if (query.isNotEmpty()) {
             val q = query
@@ -94,10 +97,10 @@ fun ChannelScreen(channelId: String, onVideo: (VideoItem) -> Unit, onChannel: (S
                 AsyncImage(
                     model = avatar,
                     contentDescription = null,
-                    modifier = Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.size(72.dp).clip(AvatarShape).background(MaterialTheme.colorScheme.primaryContainer),
                 )
-                Spacer(Modifier.size(12.dp))
-                Text(title ?: "", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.size(16.dp))
+                Text(title ?: "", style = MaterialTheme.typography.headlineSmallEmphasized)
             }
         },
     )
@@ -110,7 +113,7 @@ fun BrowseScreen(browseId: String, title: String, onVideo: (VideoItem) -> Unit, 
     FeedList(
         vm, onVideo, onChannel,
         header = {
-            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp))
+            Text(title, style = MaterialTheme.typography.headlineSmallEmphasized, modifier = Modifier.padding(16.dp))
         },
     )
 }
@@ -126,7 +129,7 @@ fun LibraryScreen(onOpen: (browseId: String, title: String) -> Unit, onSettings:
             },
             leadingContent = { Icon(Icons.Filled.AccountCircle, null, Modifier.size(40.dp)) },
             trailingContent = if (!signedIn) {
-                { Button(onClick = onSignIn) { Text("Sign in") } }
+                { Button(onClick = onSignIn, shapes = ButtonDefaults.shapes()) { Text("Sign in") } }
             } else {
                 null
             },
@@ -216,7 +219,7 @@ fun SettingsScreen(onSignIn: () -> Unit) {
 private fun Header(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.titleSmall,
+        style = MaterialTheme.typography.titleSmallEmphasized,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 4.dp),
     )

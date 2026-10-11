@@ -1,7 +1,8 @@
 # MaterialTube
 
-An open-source Android YouTube client with **Google sign-in that doesn't need MicroG**, your
-**real personalized recommendations**, no ads, SponsorBlock, background play and picture-in-picture.
+An open-source Android YouTube client with a **Material 3 Expressive** design, **Google sign-in
+that doesn't need MicroG**, your **real personalized recommendations**, comments, no ads,
+SponsorBlock, background play and picture-in-picture.
 
 ## Why not "ReVanced with real Play Services"?
 
@@ -10,9 +11,6 @@ key. Google Play Services only gives YouTube login tokens to apps signed with **
 certificate, so a re-signed YouTube can't sign in through the real Play Services. MicroG
 (GmsCore) exists only to fake that signature check. Without root, no patch gets around this,
 because the check runs inside Google's code.
-
-(With root, the patched APK can be *mounted* over the stock app so it keeps Google's signature.
-ReVanced/Morphe "root" installs already do that.)
 
 MaterialTube is a separate client instead of a patched APK:
 
@@ -44,9 +42,16 @@ you. That gives you:
 - **Home**: your personalized recommendations, the same ones as the YouTube app
 - **Subscriptions**, **History**, **Liked videos**, **Watch later**
 - **Up next / related** videos tailored to you
+- **Comments**, with replies, pinned and creator-hearted markers
 - **Like / dislike / subscribe**, all synced to your account
 - **Watch history reporting**: playback is reported via YouTube's own watch-time tracking, so
   what you watch here shapes your recommendations everywhere
+
+### Networks that block or break YouTube's DNS
+
+If your device can't resolve `youtube.com` (Private DNS, ad-blocking DNS/VPN, some Wi-Fi), the
+app switches to encrypted DNS-over-HTTPS (Cloudflare, then Google). It also falls back to
+Google's API hostnames (`oauth2.googleapis.com`, `youtubei.googleapis.com`).
 
 ## Playback
 
@@ -55,23 +60,37 @@ you. That gives you:
 - **SponsorBlock** auto-skips sponsors, self-promo and interaction reminders (configurable).
 - **Background play** with media notification and lock-screen controls.
 - **Picture-in-picture** when you leave the app during a video.
-- Fullscreen in landscape, plus a mini-player while you browse.
+- Fullscreen in landscape, plus a floating mini-player while you browse.
 - Opens YouTube links and "Share → MaterialTube".
+
+## Design
+
+Built with Compose Material 3 Expressive:
+
+- `MaterialExpressiveTheme` with expressive motion and wallpaper-based dynamic color (Android 12+)
+- Expressive loading indicators and pull-to-refresh
+- Toggle buttons for like and subscribe
+- Shape-morphing "cookie" avatars, emphasized typography and a short navigation bar
 
 ## Install
 
-Download the APK from the latest **Actions** run (artifact `MaterialTube-apk`) or from **Releases**,
-then install `MaterialTube-release.apk`.
+Download `MaterialTube-release.apk` from **Releases** (or the `MaterialTube-apk` artifact of any
+Actions run) and install it.
 
 ## Build
 
 ```bash
 ./gradlew :app:assembleRelease     # app/build/outputs/apk/release/
 ./gradlew :app:testDebugUnitTest   # parser tests
-MATERIALTUBE_LIVE_TEST=1 ./gradlew :app:testDebugUnitTest --tests 'dev.materialtube.data.LiveApiTest'  # hits real YouTube
+MATERIALTUBE_LIVE_TEST=1 ./gradlew :app:testDebugUnitTest --tests '*Live*'  # hits real YouTube
 ```
 
 Requires JDK 17 and the Android SDK (compileSdk 36).
+
+### Releases
+
+CI publishes a GitHub release (`v<versionName>`) when the workflow is run manually, when a `v*`
+tag is pushed, or when a commit message contains `[release]`.
 
 ### Signing (so updates install over each other)
 
@@ -85,27 +104,26 @@ with your own key, add these repository secrets:
 Locally, create `keystore.properties` with `storeFile`, `storePassword`, `keyAlias` and
 `keyPassword`.
 
-Push a tag like `v0.1.0` to publish a GitHub release with the APKs.
-
 ## Project layout
 
 ```
-app/src/main/java/dev/ytplus/
+app/src/main/java/dev/materialtube/
 ├── data/            pure-Kotlin API layer (unit-tested on the JVM)
 │   ├── auth/        TV OAuth device flow + token refresh
 │   ├── innertube/   InnerTube client + tolerant response parser
+│   ├── net/         DNS-over-HTTPS fallback, host fallback helpers
 │   ├── stats/       watch-history / watch-time reporting
 │   └── sponsorblock/
-├── streams/         NewPipeExtractor glue + ExoPlayer source building
+├── streams/         NewPipeExtractor glue: streams, comments, ExoPlayer sources
 ├── player/          app-wide player, MediaSessionService
-└── ui/              Jetpack Compose screens
+└── ui/              Jetpack Compose (Material 3 Expressive) screens
 ```
 
 ## Caveats
 
 - This uses YouTube's private API, which Google changes without notice. If something breaks,
-  updating NewPipeExtractor (`app/build.gradle.kts`) fixes most playback issues. The CI
-  "Live API smoke test" step flags API/layout changes.
+  updating NewPipeExtractor (`app/build.gradle.kts`) fixes most playback and comment issues. The
+  CI "Live API smoke test" step flags API/layout changes.
 - Using unofficial clients is against YouTube's Terms of Service. Use at your own discretion.
 
 License: GPL-3.0 (NewPipeExtractor is GPL-3.0).
