@@ -69,8 +69,8 @@ class WatchStats(private val http: OkHttpClient, private val auth: TvOAuth?) {
             val url = baseUrl.toHttpUrlOrNull()?.newBuilder()?.apply {
                 setQueryParameter("ver", "2")
                 setQueryParameter("cpn", cpn)
-                setQueryParameter("c", InnerTube.CLIENT_NAME)
-                setQueryParameter("cver", InnerTube.CLIENT_VERSION)
+                setQueryParameter("c", tracking.clientName)
+                setQueryParameter("cver", tracking.clientVersion.ifEmpty { InnerTube.CLIENT_VERSION })
                 setQueryParameter("rt", fmt((System.currentTimeMillis() - startedAt) / 1000.0))
                 lengthSeconds?.let { setQueryParameter("len", it.toString()) }
                 extra.forEach { (k, v) -> if (v != null) setQueryParameter(k, v) }

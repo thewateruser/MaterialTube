@@ -18,7 +18,13 @@ data class Shelf(val title: String?, val items: List<VideoItem>)
 
 data class FeedPage(val shelves: List<Shelf>, val continuation: String?)
 
-data class PlaybackTracking(val playbackUrl: String?, val watchtimeUrl: String?)
+data class PlaybackTracking(
+    val playbackUrl: String?,
+    val watchtimeUrl: String?,
+    /** The InnerTube client that issued these URLs; pings must identify as the same client. */
+    val clientName: String = "TVHTML5",
+    val clientVersion: String = "",
+)
 
 data class VideoDetails(
     val id: String,

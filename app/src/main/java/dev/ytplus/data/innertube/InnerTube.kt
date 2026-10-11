@@ -61,19 +61,31 @@ class InnerTube(
         Parser.next(call("next", JSONObject().put("videoId", videoId)), videoId)
 
     /**
-     * Signed-in player request. Streams come from NewPipeExtractor; this call is for the video
-     * details and, more importantly, the account-bound watch-history tracking URLs.
+     * Player request. Streams come from NewPipeExtractor; this call is for the video details and,
+     * more importantly, the watch-history tracking URLs.
+     *
+     * The TV client's player endpoint currently answers "The page needs to be reloaded", so we
+     * try a few clients (signed in first, then anonymously) until one returns tracking URLs.
+     * Watch-time pings are then sent signed in, so they still count for the account.
      */
-    fun player(videoId: String): PlayerInfo =
-        Parser.player(
-            call(
-                "player",
-                JSONObject()
-                    .put("videoId", videoId)
-                    .put("contentCheckOk", true)
-                    .put("racyCheckOk", true),
-            ),
-        )
+    fun player(videoId: String): PlayerInfo {
+        var fallback: PlayerInfo? = null
+        val signedIn = auth?.isSignedIn == true
+        val attempts = PLAYER_CLIENTS.flatMap { c -> if (signedIn) listOf(c to true, c to false) else listOf(c to false) }
+        for ((client, withAuth) in attempts) {
+            val body = JSONObject()
+                .put("videoId", videoId)
+                .put("contentCheckOk", true)
+                .put("racyCheckOk", true)
+            val info = runCatching {
+                Parser.player(call("player", body, client, withAuth))
+            }.getOrNull()?.let { it.copy(tracking = it.tracking?.copy(clientName = client.name, clientVersion = client.version)) }
+                ?: continue
+            if (info.tracking?.playbackUrl != null && info.details != null) return info
+            if (fallback == null || fallback.details == null) fallback = info
+        }
+        return fallback ?: PlayerInfo(null, null, null)
+    }
 
     fun like(videoId: String) = action("like/like", JSONObject().put("target", JSONObject().put("videoId", videoId)))
 
@@ -90,40 +102,38 @@ class InnerTube(
         call(endpoint, body)
     }
 
-    fun context(): JSONObject {
+    fun context(client: Client = TV): JSONObject {
         val l = locale()
-        return JSONObject().put(
-            "client",
-            JSONObject()
-                .put("clientName", CLIENT_NAME)
-                .put("clientVersion", CLIENT_VERSION)
-                .put("hl", l.language.ifEmpty { "en" })
-                .put("gl", l.country.ifEmpty { "US" })
-                .put("platform", "TV")
-                .put("userAgent", TvOAuth.TV_USER_AGENT),
-        ).put("user", JSONObject().put("lockedSafetyMode", false))
+        val c = JSONObject()
+            .put("clientName", client.name)
+            .put("clientVersion", client.version)
+            .put("hl", l.language.ifEmpty { "en" })
+            .put("gl", l.country.ifEmpty { "US" })
+            .put("userAgent", client.userAgent)
+        client.extra.forEach { (k, v) -> c.put(k, v) }
+        return JSONObject().put("client", c).put("user", JSONObject().put("lockedSafetyMode", false))
     }
 
-    fun call(endpoint: String, body: JSONObject): JSONObject {
-        body.put("context", context())
+    fun call(endpoint: String, body: JSONObject, client: Client = TV, withAuth: Boolean = true): JSONObject {
+        body.put("context", context(client))
+        val token = if (withAuth) auth?.accessToken() else null
         return try {
-            execute(endpoint, body, auth?.accessToken())
+            execute(endpoint, body, client, token)
         } catch (e: InnerTubeException) {
             // Access token revoked/expired early: refresh once and retry.
-            if (e.code != 401 || auth?.isSignedIn != true) throw e
-            execute(endpoint, body, auth.accessToken(forceRefresh = true))
+            if (e.code != 401 || token == null || auth == null) throw e
+            execute(endpoint, body, client, auth.accessToken(forceRefresh = true))
         }
     }
 
-    private fun execute(endpoint: String, body: JSONObject, token: String?): JSONObject {
+    private fun execute(endpoint: String, body: JSONObject, client: Client, token: String?): JSONObject {
         val request = Request.Builder()
             .url("$BASE_URL/$endpoint?prettyPrint=false")
             .post(body.toString().toRequestBody(JSON))
-            .header("User-Agent", TvOAuth.TV_USER_AGENT)
+            .header("User-Agent", client.userAgent)
             .header("Origin", "https://www.youtube.com")
-            .header("Referer", "https://www.youtube.com/tv")
-            .header("X-YouTube-Client-Name", CLIENT_NAME_ID)
-            .header("X-YouTube-Client-Version", CLIENT_VERSION)
+            .header("X-YouTube-Client-Name", client.id)
+            .header("X-YouTube-Client-Version", client.version)
             .apply { if (token != null) header("Authorization", "Bearer $token") }
             .build()
         http.newCall(request).execute().use { response ->
@@ -136,11 +146,41 @@ class InnerTube(
         }
     }
 
+    /** An InnerTube client identity. */
+    data class Client(
+        val name: String,
+        val id: String,
+        val version: String,
+        val userAgent: String,
+        val extra: Map<String, Any> = emptyMap(),
+    )
+
     companion object {
         const val BASE_URL = "https://www.youtube.com/youtubei/v1"
         const val CLIENT_NAME = "TVHTML5"
-        const val CLIENT_NAME_ID = "7"
-        const val CLIENT_VERSION = "7.20250923.13.00"
+        const val CLIENT_VERSION = "7.20261007.13.00"
         private val JSON = "application/json".toMediaType()
+
+        /** The TV app: the client the OAuth token belongs to; used for feeds and actions. */
+        val TV = Client(CLIENT_NAME, "7", CLIENT_VERSION, TvOAuth.TV_USER_AGENT)
+
+        /** Clients that currently return playback tracking from the player endpoint. */
+        val PLAYER_CLIENTS = listOf(
+            TV,
+            Client(
+                "MWEB", "2", "2.20251010.01.00",
+                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36",
+            ),
+            Client(
+                "IOS", "5", "20.10.4",
+                "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+                mapOf("deviceMake" to "Apple", "deviceModel" to "iPhone16,2", "osName" to "iPhone", "osVersion" to "18.3.2.22D82"),
+            ),
+            Client(
+                "ANDROID_VR", "28", "1.65.10",
+                "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+                mapOf("androidSdkVersion" to 32, "osName" to "Android", "osVersion" to "12L"),
+            ),
+        )
     }
 }
