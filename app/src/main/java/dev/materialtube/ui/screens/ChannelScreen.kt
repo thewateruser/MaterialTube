@@ -16,7 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
@@ -77,7 +77,7 @@ class ChannelHeaderViewModel(private val channelId: String) : ViewModel() {
     }
 }
 
-private val TABS = listOf(ChannelTab.Home, ChannelTab.Videos, ChannelTab.Shorts)
+private val TABS = listOf(ChannelTab.Home, ChannelTab.Videos, ChannelTab.Shorts, ChannelTab.Posts, ChannelTab.About)
 
 @Composable
 fun ChannelScreen(
@@ -101,7 +101,7 @@ fun ChannelScreen(
         },
         { Graph.api.continuation(it) },
     )
-    val vm = if (selected == ChannelTab.Home) {
+    val vm = if (selected == ChannelTab.Home || selected == ChannelTab.Posts || selected == ChannelTab.About) {
         home
     } else {
         rememberFeedViewModel(
@@ -111,28 +111,40 @@ fun ChannelScreen(
         )
     }
 
-    FeedList(
-        vm, onVideo, onChannel,
-        onShorts = onShorts,
-        showChannels = false,
-        shortsGrid = selected == ChannelTab.Shorts,
-        emptyText = "No ${selected.label.lowercase()} here",
-        header = {
-            Column {
-                ChannelHeader(header)
-                PrimaryTabRow(selectedTabIndex = tab) {
-                    TABS.forEachIndexed { i, t ->
-                        Tab(
-                            selected = tab == i,
-                            onClick = { tab = i },
-                            text = { Text(t.label) },
-                            modifier = Modifier.pressBounce(0.94f),
-                        )
-                    }
+    val headerContent: @Composable () -> Unit = {
+        Column {
+            ChannelHeader(header)
+            PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
+                TABS.forEachIndexed { i, t ->
+                    Tab(
+                        selected = tab == i,
+                        onClick = { tab = i },
+                        text = { Text(t.label) },
+                        modifier = Modifier.pressBounce(0.94f),
+                    )
                 }
             }
-        },
-    )
+        }
+    }
+
+    when (selected) {
+        ChannelTab.Posts -> {
+            val posts: PostsViewModel = viewModel(key = "channel:$channelId:Posts") { PostsViewModel(channelId) }
+            PostsList(posts, headerContent, onVideo)
+        }
+        ChannelTab.About -> {
+            val about: AboutViewModel = viewModel(key = "channel:$channelId:About") { AboutViewModel(channelId) }
+            AboutList(about, headerContent)
+        }
+        else -> FeedList(
+            vm, onVideo, onChannel,
+            onShorts = onShorts,
+            showChannels = false,
+            shortsGrid = selected == ChannelTab.Shorts,
+            emptyText = "No ${selected.label.lowercase()} here",
+            header = headerContent,
+        )
+    }
 }
 
 @Composable

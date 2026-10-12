@@ -1,5 +1,6 @@
 package dev.materialtube.ui.components
 
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import dev.materialtube.data.ChannelItem
 import androidx.compose.ui.graphics.Brush
@@ -23,8 +24,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.MaterialShapes
-import androidx.compose.material3.toShape
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.material3.MaterialTheme
@@ -141,8 +140,6 @@ fun CenteredLoading(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingIndicator() }
 }
 
-/** Expressive "cookie" shape for avatars. */
-val AvatarShape: Shape @Composable get() = MaterialShapes.Cookie9Sided.toShape()
 
 @Composable
 fun ErrorState(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
@@ -189,7 +186,7 @@ fun ChannelRow(channels: List<ChannelItem>, title: String?, onChannel: (String) 
                         model = c.avatar,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(64.dp).clip(AvatarShape).background(MaterialTheme.colorScheme.primaryContainer),
+                        modifier = Modifier.size(64.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(

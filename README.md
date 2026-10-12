@@ -60,7 +60,8 @@ Google's API hostnames (`oauth2.googleapis.com`, `youtubei.googleapis.com`).
 - **SponsorBlock** auto-skips sponsors, self-promo and interaction reminders (configurable).
 - **Background play** with media notification and lock-screen controls.
 - **Picture-in-picture** when you leave the app during a video.
-- Fullscreen in landscape, plus a floating mini-player while you browse.
+- Fullscreen in landscape with pinch-to-fill, plus a floating mini-player you can drag
+  anywhere and pinch to resize.
 - Opens YouTube links and "Share → MaterialTube".
 
 ## Design
@@ -70,7 +71,7 @@ Built with Compose Material 3 Expressive:
 - `MaterialExpressiveTheme` with expressive motion and wallpaper-based dynamic color (Android 12+)
 - Expressive loading indicators and pull-to-refresh
 - Toggle buttons for like and subscribe
-- Shape-morphing "cookie" avatars in channel rows, emphasized typography and a short navigation bar
+- Emphasized typography, springy press animations and a short navigation bar
 
 ## Install
 

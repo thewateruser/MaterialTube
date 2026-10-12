@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.WatchLater
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import dev.materialtube.ui.components.AvatarShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon

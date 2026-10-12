@@ -1,5 +1,9 @@
 package dev.materialtube.data.innertube
 
+import dev.materialtube.data.ChannelLink
+import dev.materialtube.data.ChannelAbout
+import dev.materialtube.data.PostsPage
+import dev.materialtube.data.Post
 import dev.materialtube.data.ChannelItem
 import dev.materialtube.data.ChannelPage
 import dev.materialtube.data.CommentSort
@@ -390,5 +394,84 @@ object Parser {
             subscribed = sub?.takeIf { it.has("subscribed") }?.optBoolean("subscribed"),
             feed = feed(root),
         )
+    }
+
+    /** Community posts (web channel "Posts" tab or its continuation). */
+    fun posts(root: JSONObject): PostsPage {
+        val out = LinkedHashMap<String, Post>()
+        walk(root) { node ->
+            val p = node.obj("backstagePostRenderer") ?: node.obj("postRenderer")
+            if (p != null) {
+                post(p)?.let { if (it.id !in out) out[it.id] = it }
+                false
+            } else {
+                true
+            }
+        }
+        return PostsPage(out.values.toList(), continuation(root))
+    }
+
+    private fun post(p: JSONObject): Post? {
+        val id = p.str("postId") ?: return null
+        val attachment = p.obj("backstageAttachment")
+        val images = mutableListOf<String>()
+        attachment?.obj("backstageImageRenderer")?.let { bestThumb(it.obj("image"))?.let(images::add) }
+        attachment?.obj("postMultiImageRenderer")?.arr("images")?.objects()?.forEach { img ->
+            bestThumb(img.obj("backstageImageRenderer", "image"))?.let(images::add)
+        }
+        val poll = attachment?.obj("pollRenderer")?.arr("choices")?.objects()
+            ?.mapNotNull { text(it.opt("text")) }.orEmpty()
+        return Post(
+            id = id,
+            author = text(p.opt("authorText")),
+            authorAvatar = bestThumb(p.obj("authorThumbnail")),
+            text = text(p.opt("contentText")).orEmpty(),
+            published = text(p.opt("publishedTimeText")),
+            likes = text(p.opt("voteCount"))?.takeIf { it != "0" },
+            comments = p.obj("actionButtons", "commentActionButtonsRenderer", "replyButton", "buttonRenderer")
+                ?.let { text(it.opt("text")) },
+            images = images,
+            video = attachment?.let { videos(it).firstOrNull() },
+            poll = poll,
+        )
+    }
+
+    /** The About panel ("aboutChannelViewModel"), with [fallbackDescription] from the page metadata. */
+    fun about(root: JSONObject?, fallbackDescription: String?): ChannelAbout {
+        val vm = root?.let { r -> findFirst(r) { it.has("aboutChannelViewModel") }?.obj("aboutChannelViewModel") }
+        val stats = listOfNotNull(
+            vm?.let { text(it.opt("subscriberCountText")) },
+            vm?.let { text(it.opt("videoCountText")) },
+            vm?.let { text(it.opt("viewCountText")) },
+            vm?.let { text(it.opt("joinedDateText")) },
+            vm?.let { text(it.opt("country")) },
+        )
+        val links = vm?.arr("links")?.objects()?.mapNotNull { l ->
+            val link = l.obj("channelExternalLinkViewModel") ?: return@mapNotNull null
+            val url = text(link.opt("link")) ?: return@mapNotNull null
+            ChannelLink(text(link.opt("title")) ?: url, if (url.startsWith("http")) url else "https://$url")
+        }.orEmpty()
+        return ChannelAbout(
+            description = vm?.let { text(it.opt("description")) } ?: fallbackDescription?.takeIf { it.isNotBlank() },
+            stats = stats,
+            links = links,
+        )
+    }
+
+    /** Tab title -> browse params, from a web channel page. */
+    fun channelTabs(root: JSONObject): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        walk(root) { node ->
+            val tab = node.obj("tabRenderer")
+            if (tab != null) {
+                val title = text(tab.opt("title"))
+                val params = tab.obj("endpoint", "browseEndpoint")?.str("params")
+                if (title != null && params != null) out[title] = params
+                false
+            } else {
+                true
+            }
+        }
+        return out
     }
 }

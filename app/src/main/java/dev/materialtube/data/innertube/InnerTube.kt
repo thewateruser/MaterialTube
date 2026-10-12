@@ -195,6 +195,43 @@ class InnerTube(
         return Parser.feed(call("browse", body, WEB, withAuth = false)).withShortsFlag(tab)
     }
 
+    /** The web channel page (tab list + About token), cached briefly since Posts/About both need it. */
+    private val webChannelPages = object : LinkedHashMap<String, JSONObject>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, JSONObject>?) = size > 8
+    }
+
+    private fun webChannelPage(channelId: String): JSONObject {
+        synchronized(webChannelPages) { webChannelPages[channelId] }?.let { return it }
+        val page = call("browse", JSONObject().put("browseId", channelId), WEB, withAuth = false)
+        synchronized(webChannelPages) { webChannelPages[channelId] = page }
+        return page
+    }
+
+    /** Community posts. Empty when the channel has no Posts tab. */
+    fun channelPosts(channelId: String): dev.materialtube.data.PostsPage {
+        val tabs = Parser.channelTabs(webChannelPage(channelId))
+        val params = tabs["Posts"] ?: tabs["Community"]
+            ?: tabs.entries.firstOrNull { (title, _) -> title.contains("post", true) || title.contains("community", true) }?.value
+            ?: return dev.materialtube.data.PostsPage(emptyList(), null)
+        return Parser.posts(call("browse", JSONObject().put("browseId", channelId).put("params", params), WEB, withAuth = false))
+    }
+
+    fun channelPostsContinuation(token: String): dev.materialtube.data.PostsPage =
+        Parser.posts(call("browse", JSONObject().put("continuation", token), WEB, withAuth = false))
+
+    /** Description, stats and links from the channel's About panel. */
+    fun channelAbout(channelId: String): dev.materialtube.data.ChannelAbout {
+        val page = webChannelPage(channelId)
+        val fallback = page.obj("metadata", "channelMetadataRenderer")?.str("description")
+        // The header's "more" link opens the About panel via a continuation token.
+        val token = findFirst(page.opt("header")) { it.has("continuationCommand") }
+            ?.obj("continuationCommand")?.str("token")
+        val about = token?.let { t ->
+            runCatching { call("browse", JSONObject().put("continuation", t), WEB, withAuth = false) }.getOrNull()
+        }
+        return Parser.about(about, fallback)
+    }
+
     fun channelTabContinuation(token: String): FeedPage =
         Parser.feed(call("browse", JSONObject().put("continuation", token), WEB, withAuth = false))
 

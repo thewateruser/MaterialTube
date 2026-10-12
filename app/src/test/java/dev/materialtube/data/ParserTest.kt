@@ -188,4 +188,59 @@ class ParserTest {
         )
         assertEquals(listOf("Bog"), Parser.channels(json).map { it.title })
     }
+
+    @Test
+    fun parsesCommunityPosts() {
+        val json = JSONObject(
+            """
+            {"contents":{"twoColumnBrowseResultsRenderer":{"tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{"contents":[
+              {"itemSectionRenderer":{"contents":[
+                {"backstagePostThreadRenderer":{"post":{"backstagePostRenderer":{
+                  "postId":"Ugkx1","authorText":{"runs":[{"text":"Bog"}]},
+                  "authorThumbnail":{"thumbnails":[{"url":"//yt3/bog","width":48}]},
+                  "contentText":{"runs":[{"text":"New video "},{"text":"out now"}]},
+                  "publishedTimeText":{"runs":[{"text":"2 days ago"}]},"voteCount":{"simpleText":"1.2K"},
+                  "actionButtons":{"commentActionButtonsRenderer":{"replyButton":{"buttonRenderer":{"text":{"simpleText":"85"}}}}},
+                  "backstageAttachment":{"postMultiImageRenderer":{"images":[
+                    {"backstageImageRenderer":{"image":{"thumbnails":[{"url":"https://img/1","width":640}]}}},
+                    {"backstageImageRenderer":{"image":{"thumbnails":[{"url":"https://img/2","width":640}]}}}]}}}}}},
+                {"backstagePostThreadRenderer":{"post":{"backstagePostRenderer":{
+                  "postId":"Ugkx2","contentText":{"runs":[{"text":"Which one?"}]},"voteCount":{"simpleText":"0"},
+                  "backstageAttachment":{"pollRenderer":{"choices":[{"text":{"runs":[{"text":"A"}]}},{"text":{"runs":[{"text":"B"}]}}]}}}}}},
+                {"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"MORE"}}}}
+              ]}}]}}}}]}}}
+            """,
+        )
+        val page = Parser.posts(json)
+        assertEquals(listOf("Ugkx1", "Ugkx2"), page.posts.map { it.id })
+        with(page.posts[0]) {
+            assertEquals("Bog", author)
+            assertEquals("https://yt3/bog", authorAvatar)
+            assertEquals("New video out now", text)
+            assertEquals("2 days ago", published)
+            assertEquals("1.2K", likes)
+            assertEquals("85", comments)
+            assertEquals(listOf("https://img/1", "https://img/2"), images)
+        }
+        assertEquals(listOf("A", "B"), page.posts[1].poll)
+        assertNull(page.posts[1].likes)
+        assertEquals("MORE", page.continuation)
+    }
+
+    @Test
+    fun parsesAboutPanel() {
+        val json = JSONObject(
+            """
+            {"onResponseReceivedEndpoints":[{"appendContinuationItemsAction":{"continuationItems":[{"aboutChannelRenderer":{"metadata":{
+              "aboutChannelViewModel":{"description":"Hi there","subscriberCountText":"1M subscribers",
+                "videoCountText":"900 videos","viewCountText":"1,000 views","joinedDateText":{"content":"Joined Jan 1, 2012"},
+                "country":"Canada","links":[{"channelExternalLinkViewModel":{"title":{"content":"Shop"},"link":{"content":"shop.example.com"}}}]}}}}]}}]}
+            """,
+        )
+        val about = Parser.about(json, "fallback")
+        assertEquals("Hi there", about.description)
+        assertEquals(listOf("1M subscribers", "900 videos", "1,000 views", "Joined Jan 1, 2012", "Canada"), about.stats)
+        assertEquals(listOf(ChannelLink("Shop", "https://shop.example.com")), about.links)
+        assertEquals("fallback", Parser.about(null, "fallback").description)
+    }
 }

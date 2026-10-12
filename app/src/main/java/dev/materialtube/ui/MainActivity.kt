@@ -14,7 +14,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -491,9 +491,13 @@ private val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
 /** Remembers where you left the mini player, across screens. */
 private object MiniPlayerPosition {
     var offset: Offset? = null
+    var widthDp: Float = 208f
 }
 
-/** Floating, draggable video window shown while browsing. Tap to reopen, drag anywhere. */
+/**
+ * Floating video window shown while browsing. Tap to reopen, drag it anywhere, pinch with two
+ * fingers to resize. Position and size are remembered.
+ */
 @OptIn(UnstableApi::class)
 @Composable
 private fun FloatingMiniPlayer(visible: Boolean, bottomInset: Dp, onOpen: (String) -> Unit) {
@@ -521,28 +525,41 @@ private fun FloatingMiniPlayer(visible: Boolean, bottomInset: Dp, onOpen: (Strin
                 .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = bottomInset + 12.dp),
         ) {
             val density = LocalDensity.current
-            val width = 208.dp
-            val height = width * 9f / 16f
-            val maxX = constraints.maxWidth - with(density) { width.toPx() }
-            val maxY = constraints.maxHeight - with(density) { height.toPx() }
-            fun clamp(o: Offset) = Offset(o.x.coerceIn(0f, maxX.coerceAtLeast(0f)), o.y.coerceIn(0f, maxY.coerceAtLeast(0f)))
-            var offset by remember { mutableStateOf(clamp(MiniPlayerPosition.offset ?: Offset(maxX, maxY))) }
-            LaunchedEffect(maxX, maxY) { offset = clamp(offset) }
+            val boundsW = constraints.maxWidth.toFloat()
+            val boundsH = constraints.maxHeight.toFloat()
+            val minW = with(density) { 140.dp.toPx() }
+            val maxW = boundsW.coerceAtLeast(minW)
+            var widthPx by remember { mutableStateOf(with(density) { MiniPlayerPosition.widthDp.dp.toPx() }.coerceIn(minW, maxW)) }
+            val heightPx = widthPx * 9f / 16f
+            fun clamp(o: Offset, w: Float = widthPx): Offset {
+                val maxX = (boundsW - w).coerceAtLeast(0f)
+                val maxY = (boundsH - w * 9f / 16f).coerceAtLeast(0f)
+                return Offset(o.x.coerceIn(0f, maxX), o.y.coerceIn(0f, maxY))
+            }
+            var offset by remember { mutableStateOf(clamp(MiniPlayerPosition.offset ?: Offset(boundsW, boundsH))) }
+            LaunchedEffect(boundsW, boundsH) {
+                widthPx = widthPx.coerceIn(minW, maxW)
+                offset = clamp(offset)
+            }
             val shape = MaterialTheme.shapes.large
             Box(
                 Modifier
                     .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
-                    .size(width, height)
+                    .size(with(density) { widthPx.toDp() }, with(density) { heightPx.toDp() })
                     .pressBounce(0.95f)
                     .shadow(12.dp, shape)
                     .clip(shape)
                     .background(Color.Black)
-                    .pointerInput(maxX, maxY) {
-                        detectDragGestures(
-                            onDragEnd = { MiniPlayerPosition.offset = offset },
-                        ) { change, drag ->
-                            change.consume()
-                            offset = clamp(offset + drag)
+                    .pointerInput(boundsW, boundsH) {
+                        // One finger drags, two fingers pinch to resize (growing from the centre).
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            val oldW = widthPx
+                            val newW = (oldW * zoom).coerceIn(minW, maxW)
+                            val grow = Offset((newW - oldW) / 2f, (newW - oldW) * 9f / 32f)
+                            widthPx = newW
+                            offset = clamp(offset - grow + pan, newW)
+                            MiniPlayerPosition.offset = offset
+                            MiniPlayerPosition.widthDp = with(density) { newW.toDp().value }
                         }
                     }
                     .pointerInput(videoId) { detectTapGestures(onTap = { onOpen(videoId) }) },

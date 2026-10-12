@@ -51,4 +51,20 @@ class LiveChannelTest {
         val videos = api.channelTab(channelId, ChannelTab.Videos).shelves.flatMap { it.items }.map { it.id }.toSet()
         assertTrue(items.count { it.id in videos } < items.size / 2)
     }
+
+    @Test
+    fun postsTab() {
+        val page = api.channelPosts(channelId)
+        println("POSTS n=${page.posts.size} continuation=${page.continuation != null} first=${page.posts.firstOrNull()}")
+        assertTrue(page.posts.isNotEmpty())
+        assertTrue(page.posts.any { it.text.isNotBlank() || it.images.isNotEmpty() })
+    }
+
+    @Test
+    fun aboutPanel() {
+        val about = api.channelAbout(channelId)
+        println("ABOUT description=${about.description?.take(80)} stats=${about.stats} links=${about.links.take(3)}")
+        assertNotNull(about.description)
+        assertTrue(about.stats.isNotEmpty())
+    }
 }

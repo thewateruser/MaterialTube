@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0
+- **Channel Posts and About**: community posts (text, images, polls, linked videos) and the
+  About panel (description, subscriber/video/view counts, join date, country, links).
+- **Pinch the mini player** with two fingers to resize it; size and position are remembered.
+- **Pinch in fullscreen**: pinch out to zoom the video to fill the screen, pinch in to see the
+  whole frame again.
+- Channel avatars are plain circles everywhere.
+
 ## 0.4.2
 - **Fullscreen** really stays in landscape now. The player echoed the fullscreen state back as
   a button press, which the app treated as a toggle and flipped straight back to portrait.

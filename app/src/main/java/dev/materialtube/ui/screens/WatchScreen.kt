@@ -2,6 +2,14 @@
 
 package dev.materialtube.ui.screens
 
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedVisibility
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.gestures.calculateZoom
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
@@ -281,6 +289,8 @@ fun VideoPlayer(
     fullscreen: Boolean,
     showControls: Boolean,
     onFullscreen: (Boolean) -> Unit,
+    /** Crop to fill the screen instead of showing the whole frame with bars. */
+    fill: Boolean = false,
 ) {
     val error by PlayerController.error.collectAsState()
     val loading by PlayerController.loading.collectAsState()
@@ -300,6 +310,7 @@ fun VideoPlayer(
             update = {
                 it.useController = showControls
                 it.setFullscreenButtonState(fullscreen)
+                it.resizeMode = if (fill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
             },
             onRelease = { it.player = null },
             modifier = Modifier.fillMaxSize(),
@@ -364,19 +375,54 @@ fun WatchScreen(
     val progress = (dragY.value / (screenHeight * 0.6f)).coerceIn(0f, 1f)
 
     if (fullscreen || inPip) {
-        VideoPlayer(
-            Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    translationY = dragY.value
-                    scaleX = 1f - progress * 0.2f
-                    scaleY = 1f - progress * 0.2f
+        // Pinch out to crop the video to fill the screen, pinch in to see the whole frame.
+        var fill by rememberSaveable { mutableStateOf(false) }
+        var hint by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(hint) {
+            if (hint != null) {
+                delay(900)
+                hint = null
+            }
+        }
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            VideoPlayer(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationY = dragY.value
+                        scaleX = 1f - progress * 0.2f
+                        scaleY = 1f - progress * 0.2f
+                    }
+                    .then(
+                        if (inPip) {
+                            Modifier
+                        } else {
+                            Modifier
+                                .pinchToFill { zoomIn ->
+                                    if (zoomIn != fill) {
+                                        fill = zoomIn
+                                        hint = if (zoomIn) "Zoomed to fill" else "Original"
+                                    }
+                                }
+                                .then(dragToMinimize)
+                        },
+                    ),
+                fullscreen = true,
+                showControls = !inPip,
+                onFullscreen = onFullscreen,
+                fill = fill && !inPip,
+            )
+            AnimatedVisibility(
+                visible = hint != null,
+                enter = fadeIn() + scaleIn(initialScale = 0.8f),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 32.dp),
+            ) {
+                Surface(shape = CircleShape, color = Color(0xCC000000), contentColor = Color.White) {
+                    Text(hint.orEmpty(), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                 }
-                .then(if (inPip) Modifier else dragToMinimize),
-            fullscreen = true,
-            showControls = !inPip,
-            onFullscreen = onFullscreen,
-        )
+            }
+        }
         return
     }
 
@@ -757,6 +803,7 @@ private fun Modifier.dragDown(onDrag: (Float) -> Unit, onEnd: () -> Unit): Modif
             val event = awaitPointerEvent(PointerEventPass.Initial)
             val change = event.changes.firstOrNull { it.id == down.id } ?: break
             if (!change.pressed) break
+            if (!dragging && event.changes.count { it.pressed } > 1) break // a pinch, not a drag
             val delta = change.positionChange()
             if (!dragging) {
                 total += delta
@@ -774,5 +821,30 @@ private fun Modifier.dragDown(onDrag: (Float) -> Unit, onEnd: () -> Unit): Modif
             if (dragging) change.consume()
         }
         if (dragging) onEnd()
+    }
+}
+
+/**
+ * Two-finger pinch: reports `true` after pinching out, `false` after pinching in. Watches the
+ * initial pass and only consumes events while two fingers are down, so taps and one-finger
+ * gestures still reach the player.
+ */
+private fun Modifier.pinchToFill(onResult: (Boolean) -> Unit): Modifier = pointerInput(Unit) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        var zoom = 1f
+        var pinching = false
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            if (event.changes.none { it.pressed }) break
+            if (event.changes.count { it.pressed } >= 2) {
+                pinching = true
+                zoom *= event.calculateZoom()
+                event.changes.forEach { it.consume() }
+            }
+        }
+        if (pinching) {
+            if (zoom > 1.15f) onResult(true) else if (zoom < 0.87f) onResult(false)
+        }
     }
 }

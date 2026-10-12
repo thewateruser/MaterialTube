@@ -88,4 +88,33 @@ enum class ChannelTab(val label: String, val params: String?) {
     Videos("Videos", "EgZ2aWRlb3PyBgQKAjoA"),
     Shorts("Shorts", "EgZzaG9ydHPyBgUKA5oBAA%3D%3D"),
     Live("Live", "EgdzdHJlYW1z8gYECgJ6AA%3D%3D"),
+
+    /** Posts and About come from their own requests (see InnerTube.channelPosts / channelAbout). */
+    Posts("Posts", null),
+    About("About", null),
 }
+
+/** A channel community post. */
+data class Post(
+    val id: String,
+    val author: String?,
+    val authorAvatar: String?,
+    val text: String,
+    val published: String?,
+    val likes: String?,
+    val comments: String?,
+    val images: List<String> = emptyList(),
+    val video: VideoItem? = null,
+    val poll: List<String> = emptyList(),
+)
+
+data class PostsPage(val posts: List<Post>, val continuation: String?)
+
+data class ChannelLink(val title: String, val url: String)
+
+/** The channel's About panel: description, stats ("1M subscribers", "Joined ..."), links. */
+data class ChannelAbout(
+    val description: String?,
+    val stats: List<String>,
+    val links: List<ChannelLink>,
+)
