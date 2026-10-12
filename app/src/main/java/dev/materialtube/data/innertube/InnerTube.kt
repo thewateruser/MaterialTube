@@ -213,11 +213,22 @@ class InnerTube(
         val params = tabs["Posts"] ?: tabs["Community"]
             ?: tabs.entries.firstOrNull { (title, _) -> title.contains("post", true) || title.contains("community", true) }?.value
             ?: return dev.materialtube.data.PostsPage(emptyList(), null)
-        return Parser.posts(call("browse", JSONObject().put("browseId", channelId).put("params", params), WEB, withAuth = false))
+        val body = { JSONObject().put("browseId", channelId).put("params", params) }
+        // Signed in, the posts carry the like actions (signed out they only offer "sign in").
+        if (auth?.isSignedIn == true) {
+            runCatching { Parser.posts(call("browse", body(), WEB, withAuth = true)) }
+                .getOrNull()?.takeIf { it.posts.isNotEmpty() }?.let { return it }
+        }
+        return Parser.posts(call("browse", body(), WEB, withAuth = false))
     }
 
-    fun channelPostsContinuation(token: String): dev.materialtube.data.PostsPage =
-        Parser.posts(call("browse", JSONObject().put("continuation", token), WEB, withAuth = false))
+    fun channelPostsContinuation(token: String): dev.materialtube.data.PostsPage {
+        if (auth?.isSignedIn == true) {
+            runCatching { Parser.posts(call("browse", JSONObject().put("continuation", token), WEB, withAuth = true)) }
+                .getOrNull()?.takeIf { it.posts.isNotEmpty() }?.let { return it }
+        }
+        return Parser.posts(call("browse", JSONObject().put("continuation", token), WEB, withAuth = false))
+    }
 
     /** First page of a community post's comments. */
     fun postComments(post: dev.materialtube.data.Post): dev.materialtube.data.PostCommentsPage {
