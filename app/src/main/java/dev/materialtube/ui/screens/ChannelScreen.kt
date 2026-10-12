@@ -41,7 +41,6 @@ import coil.compose.AsyncImage
 import dev.materialtube.Graph
 import dev.materialtube.data.ChannelPage
 import dev.materialtube.data.ChannelTab
-import dev.materialtube.data.FeedPage
 import dev.materialtube.data.VideoItem
 import dev.materialtube.ui.components.pressBounce
 import kotlinx.coroutines.CancellationException
@@ -108,7 +107,7 @@ fun ChannelScreen(
         rememberFeedViewModel(
             "channel:$channelId:${selected.name}",
             { Graph.api.channelTab(channelId, selected) },
-            ::tabContinuation,
+            { Graph.api.channelTabContinuation(it) },
         )
     }
 
@@ -135,12 +134,6 @@ fun ChannelScreen(
         },
     )
 }
-
-/** A tab's next page may come from either the TV or the web client, so try both. */
-private fun tabContinuation(token: String): FeedPage =
-    runCatching { Graph.api.channelTabContinuation(token, web = false) }.getOrNull()
-        ?.takeIf { p -> p.shelves.any { it.items.isNotEmpty() } }
-        ?: Graph.api.channelTabContinuation(token, web = true)
 
 @Composable
 private fun ChannelHeader(vm: ChannelHeaderViewModel) {

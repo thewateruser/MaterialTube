@@ -31,6 +31,14 @@ class LiveChannelTest {
         val items = page.shelves.flatMap { it.items }
         println("VIDEOS items=${items.size} continuation=${page.continuation != null} first=${items.firstOrNull()?.title}")
         assertTrue(items.size >= 10)
+        val home = api.channel(channelId).feed.shelves.flatMap { it.items }.map { it.id }
+        // Must be the real tab, not the channel home again.
+        assertTrue(items.map { it.id } != home)
+        if (page.continuation != null) {
+            val more = api.channelTabContinuation(page.continuation!!).shelves.flatMap { it.items }
+            println("VIDEOS more=${more.size}")
+            assertTrue(more.isNotEmpty())
+        }
     }
 
     @Test
@@ -40,5 +48,7 @@ class LiveChannelTest {
         println("SHORTS items=${items.size} continuation=${page.continuation != null} first=${items.firstOrNull()?.title}")
         assertTrue(items.size >= 6)
         assertTrue(items.all { it.isShort })
+        val videos = api.channelTab(channelId, ChannelTab.Videos).shelves.flatMap { it.items }.map { it.id }.toSet()
+        assertTrue(items.count { it.id in videos } < items.size / 2)
     }
 }

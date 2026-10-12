@@ -70,7 +70,7 @@ Built with Compose Material 3 Expressive:
 - `MaterialExpressiveTheme` with expressive motion and wallpaper-based dynamic color (Android 12+)
 - Expressive loading indicators and pull-to-refresh
 - Toggle buttons for like and subscribe
-- Shape-morphing "cookie" avatars, emphasized typography and a short navigation bar
+- Shape-morphing "cookie" avatars in channel rows, emphasized typography and a short navigation bar
 
 ## Install
 
@@ -85,7 +85,7 @@ Actions run) and install it.
 MATERIALTUBE_LIVE_TEST=1 ./gradlew :app:testDebugUnitTest --tests '*Live*'  # hits real YouTube
 ```
 
-Requires JDK 17 and the Android SDK (compileSdk 36).
+Requires JDK 17 and the Android SDK (compileSdk 37).
 
 ### Releases
 

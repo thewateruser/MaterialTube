@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0
+- **Mini player**: keep watching in a floating player while you browse. Drag it anywhere,
+  tap to reopen, play/pause or close it.
+- **Drag down** on the video to minimise the watch page (or leave fullscreen).
+- **Landscape fix**: rotating after using the fullscreen button no longer snaps back to portrait.
+- **Channel page** rebuilt: banner, avatar, subscriber line, subscribe button, and
+  Home / Videos / Shorts tabs (Shorts as a grid).
+- **Shorts balance**: a Shorts row about every 8 videos on home, including further down.
+- One consistent springy press animation on every button, card and tab.
+- Smoother fade-through between bottom tabs and slides for pages.
+- Plain circle avatars on the watch page.
+
 ## 0.3.1
 - Every build is now signed with the same key, so new versions install as updates
   (uninstall once more when coming from 0.3.0 or older).
