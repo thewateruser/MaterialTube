@@ -50,6 +50,9 @@ object Comments {
         return CommentsPage(result.items.map(::map), result.nextPage?.takeIf { result.hasNextPage() })
     }
 
+    /** First page for a sort-order continuation token (see InnerTube.commentSorts). */
+    fun fromToken(videoId: String, token: String): CommentsPage = more(videoId, Page(url(videoId), token))
+
     private fun map(c: CommentsInfoItem): Comment {
         val description: Description? = c.commentText
         return Comment(

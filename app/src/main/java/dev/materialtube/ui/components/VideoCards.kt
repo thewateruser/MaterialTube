@@ -1,6 +1,13 @@
 package dev.materialtube.ui.components
 
 import androidx.compose.foundation.background
+import dev.materialtube.data.ChannelItem
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -148,5 +155,110 @@ fun ErrorState(message: String, onRetry: () -> Unit, modifier: Modifier = Modifi
         Text(message, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
         Button(onClick = onRetry, shapes = ButtonDefaults.shapes()) { Text("Retry") }
+    }
+}
+
+@Composable
+fun SectionTitle(title: String, modifier: Modifier = Modifier) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleLargeEmphasized,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
+    )
+}
+
+/** Horizontal row of channel avatars (subscriptions, search results). */
+@Composable
+fun ChannelRow(channels: List<ChannelItem>, title: String?, onChannel: (String) -> Unit) {
+    Column {
+        title?.let { SectionTitle(it) }
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            items(channels, key = { it.id }) { c ->
+                Column(
+                    Modifier
+                        .width(84.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                        .clickable { onChannel(c.id) }
+                        .padding(vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    AsyncImage(
+                        model = c.avatar,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(64.dp).clip(AvatarShape).background(MaterialTheme.colorScheme.primaryContainer),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        c.title,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
+                    c.subtitle?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Horizontal row of vertical Shorts cards. */
+@Composable
+fun ShortsRow(title: String, items: List<VideoItem>, onClick: (Int) -> Unit) {
+    Column {
+        SectionTitle(title)
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            itemsIndexed(items, key = { _, v -> v.id }) { index, v ->
+                Box(
+                    Modifier
+                        .width(150.dp)
+                        .aspectRatio(9f / 16f)
+                        .clip(MaterialTheme.shapes.large)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { onClick(index) },
+                ) {
+                    AsyncImage(
+                        model = v.thumbnail,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color(0xCC000000))),
+                    )
+                    Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
+                        Text(
+                            v.title,
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        v.meta?.let {
+                            Text(it, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
     }
 }

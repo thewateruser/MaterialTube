@@ -87,4 +87,25 @@ class LiveApiTest {
         println("FallbackDns: $addresses")
         assertTrue(addresses.isNotEmpty())
     }
+
+    @Test
+    fun searchFindsChannels() {
+        val page = api.search("mrbeast")
+        println("search channels: ${page.channels.take(5)}")
+        assertTrue(page.channels.isNotEmpty())
+    }
+
+    @Test
+    fun commentSortOptions() {
+        val sorts = api.commentSorts("dQw4w9WgXcQ")
+        println("comment sorts: ${sorts.map { it.label }}")
+        assertTrue(sorts.size >= 2)
+    }
+
+    @Test
+    fun shortsShelfAvailable() {
+        val shelf = api.shortsShelf()
+        println("shorts shelf: ${shelf?.items?.size} first=${shelf?.items?.firstOrNull()}")
+        assertTrue(shelf != null && shelf.items.isNotEmpty())
+    }
 }

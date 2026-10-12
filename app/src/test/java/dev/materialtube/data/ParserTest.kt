@@ -97,4 +97,43 @@ class ParserTest {
         )
         assertEquals(listOf("u1", "u2"), segs.map { it.uuid })
     }
+
+    @Test
+    fun parsesChannelsAndShorts() {
+        val json = JSONObject(
+            """{"contents":[
+                {"tileRenderer":{"contentType":"TILE_CONTENT_TYPE_CHANNEL","contentId":"UCabc",
+                  "header":{"tileHeaderRenderer":{"thumbnail":{"thumbnails":[{"url":"https://yt3/a.jpg","width":88}]}}},
+                  "metadata":{"tileMetadataRenderer":{"title":{"simpleText":"Chan A"},"lines":[{"lineRenderer":{"items":[{"lineItemRenderer":{"text":{"simpleText":"1M subscribers"}}}]}}]}},
+                  "onSelectCommand":{"browseEndpoint":{"browseId":"UCabc"}}}},
+                {"tabRenderer":{"title":"Chan B","thumbnail":{"thumbnails":[{"url":"https://yt3/b.jpg","width":88}]},
+                  "endpoint":{"browseEndpoint":{"browseId":"UCbbb"}}}},
+                {"tabRenderer":{"title":"Home","endpoint":{"browseEndpoint":{"browseId":"FEwhat_to_watch"}}}},
+                {"tileRenderer":{"contentType":"TILE_CONTENT_TYPE_SHORTS","contentId":"short000001",
+                  "metadata":{"tileMetadataRenderer":{"title":{"simpleText":"A short"}}},
+                  "onSelectCommand":{"reelWatchEndpoint":{"videoId":"short000001"}}}},
+                {"shortsLockupViewModel":{"entityId":"shorts-shelf-item-short000002",
+                  "overlayMetadata":{"primaryText":{"content":"Web short"},"secondaryText":{"content":"2M views"}},
+                  "onTap":{"innertubeCommand":{"reelWatchEndpoint":{"videoId":"short000002"}}}}}
+            ]}""",
+        )
+        val page = Parser.feed(json)
+        assertEquals(listOf("UCabc", "UCbbb"), page.channels.map { it.id })
+        assertEquals("1M subscribers", page.channels[0].subtitle)
+        assertEquals("https://yt3/b.jpg", page.channels[1].avatar)
+        val shorts = page.shelves.flatMap { it.items }
+        assertEquals(listOf("short000001", "short000002"), shorts.map { it.id })
+        assertTrue(shorts.all { it.isShort })
+    }
+
+    @Test
+    fun parsesCommentSorts() {
+        val json = JSONObject(
+            """{"onResponseReceivedEndpoints":[{"reloadContinuationItemsCommand":{"continuationItems":[{"commentsHeaderRenderer":{
+                "sortMenu":{"sortFilterSubMenuRenderer":{"subMenuItems":[
+                  {"title":"Top","serviceEndpoint":{"continuationCommand":{"token":"TOP"}}},
+                  {"title":"Newest","serviceEndpoint":{"continuationCommand":{"token":"NEW"}}}]}}}}]}}]}""",
+        )
+        assertEquals(listOf(CommentSort("Top", "TOP"), CommentSort("Newest", "NEW")), Parser.commentSorts(json))
+    }
 }

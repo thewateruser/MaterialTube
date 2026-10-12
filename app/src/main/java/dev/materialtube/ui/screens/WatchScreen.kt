@@ -47,6 +47,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -78,6 +81,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import dev.materialtube.Graph
+import dev.materialtube.data.CommentSort
 import dev.materialtube.data.LikeStatus
 import dev.materialtube.data.NextInfo
 import dev.materialtube.data.VideoItem
@@ -119,6 +123,42 @@ class WatchViewModel(private val videoId: String) : ViewModel() {
 
     enum class CommentsState { Loading, Ready, Disabled, Error }
 
+    /** "Top comments" / "Newest first", loaded when the comments sheet opens. */
+    var sorts by mutableStateOf<List<CommentSort>>(emptyList())
+        private set
+    var selectedSort by mutableStateOf(0)
+        private set
+    private var sortsRequested = false
+
+    fun loadSorts() {
+        if (sortsRequested) return
+        sortsRequested = true
+        viewModelScope.launch {
+            sorts = runCatching { withContext(Dispatchers.IO) { Graph.api.commentSorts(videoId) } }.getOrDefault(emptyList())
+        }
+    }
+
+    fun selectSort(index: Int) {
+        val sort = sorts.getOrNull(index) ?: return
+        if (index == selectedSort) return
+        selectedSort = index
+        commentsState = CommentsState.Loading
+        comments = emptyList()
+        replies.clear()
+        viewModelScope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) { Comments.fromToken(videoId, sort.token) }
+                comments = page.items
+                commentsNext = page.next
+                commentsState = CommentsState.Ready
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                commentsState = CommentsState.Error
+            }
+        }
+    }
+
     init {
         viewModelScope.launch {
             try {
@@ -137,6 +177,7 @@ class WatchViewModel(private val videoId: String) : ViewModel() {
     }
 
     fun loadComments() {
+        selectedSort = 0
         commentsState = CommentsState.Loading
         viewModelScope.launch {
             try {
@@ -494,8 +535,9 @@ private fun CommentsTeaser(vm: WatchViewModel, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit) {
+internal fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    LaunchedEffect(Unit) { vm.loadSorts() }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Comments", style = MaterialTheme.typography.headlineSmallEmphasized)
@@ -503,6 +545,21 @@ private fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit) {
                 Spacer(Modifier.size(8.dp))
                 Text("%,d".format(it), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+        if (vm.sorts.size > 1) {
+            SingleChoiceSegmentedButtonRow(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                vm.sorts.forEachIndexed { index, sort ->
+                    SegmentedButton(
+                        selected = vm.selectedSort == index,
+                        onClick = { vm.selectSort(index) },
+                        shape = SegmentedButtonDefaults.itemShape(index, vm.sorts.size),
+                        label = { Text(sort.label) },
+                    )
+                }
+            }
+        }
+        if (vm.commentsState == WatchViewModel.CommentsState.Loading) {
+            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { LoadingIndicator() }
         }
         Spacer(Modifier.height(8.dp))
         LazyColumn(Modifier.fillMaxWidth()) {
@@ -604,7 +661,7 @@ private fun QualityButton(current: Int?, heights: List<Int>) {
     }
 }
 
-private fun share(context: Context, videoId: String) {
+internal fun share(context: Context, videoId: String) {
     val intent = Intent(Intent.ACTION_SEND)
         .setType("text/plain")
         .putExtra(Intent.EXTRA_TEXT, "https://youtu.be/$videoId")

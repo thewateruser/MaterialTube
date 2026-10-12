@@ -1,6 +1,8 @@
 package dev.materialtube.data.innertube
 
+import dev.materialtube.data.ChannelItem
 import dev.materialtube.data.ChannelPage
+import dev.materialtube.data.CommentSort
 import dev.materialtube.data.FeedPage
 import dev.materialtube.data.LikeStatus
 import dev.materialtube.data.NextInfo
@@ -43,7 +45,93 @@ object Parser {
         // Anything outside a shelf (flat lists, rich grids) becomes one untitled shelf.
         val loose = videos(root).filter { it.id !in seen }
         if (loose.isNotEmpty()) shelves += Shelf(null, loose)
-        return FeedPage(shelves, continuation(root))
+        return FeedPage(shelves, continuation(root), channels(root))
+    }
+
+    /** Channel entries anywhere in [root]: search results, the subscriptions sidebar, channel grids. */
+    fun channels(root: Any?): List<ChannelItem> {
+        val out = LinkedHashMap<String, ChannelItem>()
+        walk(root) { node ->
+            val c = channelItem(node)
+            if (c != null) {
+                if (c.id !in out) out[c.id] = c
+                false
+            } else {
+                true
+            }
+        }
+        return out.values.toList()
+    }
+
+    private fun channelItem(node: JSONObject): ChannelItem? {
+        node.obj("tileRenderer")?.let { t ->
+            if ("CHANNEL" !in t.str("contentType").orEmpty()) return null
+            val id = t.obj("onSelectCommand", "browseEndpoint")?.str("browseId") ?: t.str("contentId") ?: return null
+            if (!id.startsWith("UC")) return null
+            val meta = t.obj("metadata", "tileMetadataRenderer")
+            val lines = meta?.arr("lines")?.objects()?.mapNotNull { line ->
+                line.obj("lineRenderer")?.arr("items")?.objects()
+                    ?.mapNotNull { text(it.obj("lineItemRenderer")?.opt("text")) }?.joinToString(" ")?.trim()?.takeIf { it.isNotEmpty() }
+            }.orEmpty()
+            return ChannelItem(
+                id, text(meta?.opt("title")) ?: return null,
+                bestThumb(t.obj("header", "tileHeaderRenderer", "thumbnail")),
+                lines.firstOrNull(),
+            )
+        }
+        node.obj("lockupViewModel")?.let { l ->
+            if ("CHANNEL" !in l.str("contentType").orEmpty()) return null
+            val id = l.str("contentId")?.takeIf { it.startsWith("UC") } ?: return null
+            val meta = l.obj("metadata", "lockupMetadataViewModel")
+            var avatar: String? = null
+            walk(l.opt("contentImage")) { n -> if (avatar == null) avatar = bestThumb(n.obj("image")); avatar == null }
+            return ChannelItem(id, text(meta?.opt("title")) ?: return null, avatar)
+        }
+        for (key in listOf("channelRenderer", "gridChannelRenderer", "compactChannelRenderer")) {
+            node.obj(key)?.let { c ->
+                val id = c.str("channelId") ?: return null
+                return ChannelItem(
+                    id, text(c.opt("title")) ?: text(c.opt("displayName")) ?: return null,
+                    bestThumb(c.obj("thumbnail")),
+                    text(c.opt("subscriberCountText")) ?: text(c.opt("videoCountText")),
+                )
+            }
+        }
+        // TV subscriptions sidebar: one tab per channel, and TV search channel lockups.
+        for (key in listOf("tabRenderer", "avatarLockupRenderer")) {
+            node.obj(key)?.let { c ->
+                val id = findFirst(c) { it.obj("browseEndpoint")?.str("browseId")?.startsWith("UC") == true }
+                    ?.obj("browseEndpoint")?.str("browseId") ?: return null
+                val title = text(c.opt("title")) ?: findFirst(c) { it.has("title") }?.let { text(it.opt("title")) } ?: return null
+                var avatar: String? = null
+                walk(c) { n ->
+                    if (avatar == null) avatar = bestThumb(n.obj("thumbnail")) ?: bestThumb(n.obj("avatar"))
+                    avatar == null
+                }
+                return ChannelItem(id, title, avatar, text(c.opt("subtitle")))
+            }
+        }
+        return null
+    }
+
+    /** Comment sort options ("Top comments", "Newest first") from a web comments response. */
+    fun commentSorts(root: JSONObject): List<CommentSort> {
+        val menu = findFirst(root) { it.has("sortFilterSubMenuRenderer") }?.obj("sortFilterSubMenuRenderer") ?: return emptyList()
+        return menu.arr("subMenuItems")?.objects()?.mapNotNull { item ->
+            val label = item.str("title") ?: text(item.opt("title")) ?: return@mapNotNull null
+            val token = findFirst(item) { it.has("continuationCommand") }?.obj("continuationCommand")?.str("token")
+                ?: return@mapNotNull null
+            CommentSort(label, token)
+        }.orEmpty()
+    }
+
+    /** Continuation token of the comments section in a web /next response. */
+    fun commentsToken(root: JSONObject): String? {
+        val section = findFirst(root) {
+            it.obj("itemSectionRenderer")?.str("targetId") == "comments-section" ||
+                it.obj("itemSectionRenderer")?.str("sectionIdentifier") == "comment-item-section"
+        }?.obj("itemSectionRenderer") ?: return null
+        return findFirst(section) { it.has("continuationCommand") }?.obj("continuationCommand")?.str("token")
     }
 
     private fun shelfTitle(shelf: JSONObject): String? =
@@ -86,6 +174,7 @@ object Parser {
     fun video(node: JSONObject): VideoItem? {
         node.optJSONObject("tileRenderer")?.let { return tile(it) }
         node.optJSONObject("lockupViewModel")?.let { return lockup(it) }
+        node.optJSONObject("shortsLockupViewModel")?.let { return shortsLockup(it) }
         for (key in VIDEO_RENDERERS) node.optJSONObject(key)?.let { return classic(it) }
         return null
     }
@@ -100,7 +189,10 @@ object Parser {
         val type = t.str("contentType").orEmpty()
         if ("CHANNEL" in type || "PLAYLIST" in type) return null
         val watch = t.obj("onSelectCommand", "watchEndpoint")
-        val id = watch?.str("videoId") ?: t.str("contentId")?.takeIf { "VIDEO" in type || "SHORT" in type } ?: return null
+        val reel = t.obj("onSelectCommand", "reelWatchEndpoint")
+        val id = watch?.str("videoId") ?: reel?.str("videoId")
+            ?: t.str("contentId")?.takeIf { "VIDEO" in type || "SHORT" in type } ?: return null
+        val short = reel != null || "SHORT" in type
         val header = t.obj("header", "tileHeaderRenderer")
         val meta = t.obj("metadata", "tileMetadataRenderer")
         val lines = meta?.arr("lines")?.objects()?.mapNotNull { line ->
@@ -128,6 +220,7 @@ object Parser {
             thumbnail = bestThumb(header?.obj("thumbnail")) ?: thumbFor(id),
             isLive = live || duration.equals("LIVE", ignoreCase = true),
             watchedPercent = watched,
+            isShort = short,
         )
     }
 
@@ -157,6 +250,22 @@ object Parser {
             duration = duration?.takeIf { DURATION.matches(it) },
             thumbnail = bestThumb(image?.obj("image")) ?: thumbFor(id),
             isLive = duration.equals("LIVE", ignoreCase = true),
+            isShort = "SHORT" in type,
+        )
+    }
+
+    /** Web/mobile Shorts shelf item. */
+    private fun shortsLockup(l: JSONObject): VideoItem? {
+        val id = findFirst(l) { it.has("reelWatchEndpoint") }?.obj("reelWatchEndpoint")?.str("videoId")
+            ?: l.str("entityId")?.substringAfterLast("-")?.takeIf { it.length == 11 }
+            ?: return null
+        val overlay = l.obj("overlayMetadata")
+        return VideoItem(
+            id = id,
+            title = text(overlay?.opt("primaryText")) ?: text(l.obj("accessibilityText")) ?: return null,
+            meta = text(overlay?.opt("secondaryText")),
+            thumbnail = bestThumb(l.obj("thumbnail")) ?: "https://i.ytimg.com/vi/$id/oardefault.jpg",
+            isShort = true,
         )
     }
 
@@ -185,6 +294,7 @@ object Parser {
             duration = duration?.takeIf { DURATION.matches(it) },
             thumbnail = bestThumb(v.obj("thumbnail")) ?: thumbFor(id),
             isLive = live,
+            isShort = v.has("headline") || findFirst(v.opt("navigationEndpoint")) { it.has("reelWatchEndpoint") } != null,
         )
     }
 

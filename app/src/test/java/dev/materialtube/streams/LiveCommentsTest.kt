@@ -28,4 +28,13 @@ class LiveCommentsTest {
             assertTrue(replies.items.isNotEmpty())
         }
     }
+
+    @Test
+    fun newestFirstLoads() {
+        val api = dev.materialtube.data.innertube.InnerTube(FallbackDns.client(), null)
+        val newest = api.commentSorts("dQw4w9WgXcQ").last()
+        val page = Comments.fromToken("dQw4w9WgXcQ", newest.token)
+        println("${newest.label}: ${page.items.take(3).map { "${it.author} (${it.published})" }}")
+        assertTrue(page.items.isNotEmpty())
+    }
 }

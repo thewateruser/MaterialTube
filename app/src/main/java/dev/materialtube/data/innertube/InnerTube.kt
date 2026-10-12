@@ -39,7 +39,40 @@ class InnerTube(
         return Parser.feed(call("browse", JSONObject().put("browseId", "FEwhat_to_watch")))
     }
 
-    fun subscriptions(): FeedPage = browse("FEsubscriptions")
+    /** Subscription uploads plus the list of subscribed channels (for the channel row). */
+    /** Home feed with a Shorts row: YouTube's own if the feed has one, otherwise from the Shorts feed. */
+    fun homeWithShorts(): FeedPage {
+        val page = home()
+        if (page.shelves.any { s -> s.items.any { it.isShort } }) return page
+        val shorts = runCatching { shortsShelf() }.getOrNull() ?: return page
+        val shelves = page.shelves.toMutableList()
+        shelves.add(minOf(1, shelves.size), shorts)
+        return page.copy(shelves = shelves)
+    }
+
+    /** A row of Shorts: the TV Shorts tab (personalized when signed in), then the web Shorts feed. */
+    fun shortsShelf(): dev.materialtube.data.Shelf? {
+        val sources: List<() -> JSONObject> = listOf(
+            { call("browse", JSONObject().put("browseId", "FEshorts")) },
+            { call("browse", JSONObject().put("browseId", "FEshorts"), WEB, withAuth = false) },
+        )
+        for (source in sources) {
+            val items = runCatching { Parser.videos(source()) }.getOrNull()
+                ?.map { it.copy(isShort = true) }
+                ?.takeIf { it.size >= 3 }
+                ?: continue
+            return dev.materialtube.data.Shelf("Shorts", items.take(30))
+        }
+        return null
+    }
+
+    fun subscriptions(): FeedPage {
+        val page = browse("FEsubscriptions")
+        if (page.channels.isNotEmpty()) return page
+        val channels = runCatching { Parser.channels(call("browse", JSONObject().put("browseId", "FEchannels"))) }
+            .getOrDefault(emptyList())
+        return page.copy(channels = channels)
+    }
 
     fun history(): FeedPage = browse("FEhistory")
 
@@ -60,6 +93,17 @@ class InnerTube(
     fun search(query: String): FeedPage = Parser.feed(call("search", JSONObject().put("query", query)))
 
     fun searchContinuation(token: String): FeedPage = continuation(token, "search")
+
+    /**
+     * Comment sort options ("Top comments" / "Newest first") as continuation tokens. Comes from the
+     * web client's comments header; the tokens are then paged through NewPipeExtractor.
+     */
+    fun commentSorts(videoId: String): List<dev.materialtube.data.CommentSort> {
+        val next = call("next", JSONObject().put("videoId", videoId), WEB, withAuth = false)
+        val token = Parser.commentsToken(next) ?: return emptyList()
+        val header = call("next", JSONObject().put("continuation", token), WEB, withAuth = false)
+        return Parser.commentSorts(header)
+    }
 
     fun next(videoId: String): NextInfo =
         Parser.next(call("next", JSONObject().put("videoId", videoId)), videoId)
@@ -182,6 +226,11 @@ class InnerTube(
 
         /** The TV app: the client the OAuth token belongs to; used for feeds and actions. */
         val TV = Client(CLIENT_NAME, "7", CLIENT_VERSION, TvOAuth.TV_USER_AGENT)
+
+        val WEB = Client(
+            "WEB", "1", "2.20251010.00.00",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
+        )
 
         /** Clients that currently return playback tracking from the player endpoint. */
         val PLAYER_CLIENTS = listOf(

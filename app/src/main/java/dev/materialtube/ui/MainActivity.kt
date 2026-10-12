@@ -89,6 +89,8 @@ import dev.materialtube.ui.screens.ChannelScreen
 import dev.materialtube.ui.screens.FeedList
 import dev.materialtube.ui.screens.LibraryScreen
 import dev.materialtube.ui.screens.SearchScreen
+import dev.materialtube.ui.screens.ShortsQueue
+import dev.materialtube.ui.screens.ShortsScreen
 import dev.materialtube.ui.screens.SettingsScreen
 import dev.materialtube.ui.screens.SignInScreen
 import dev.materialtube.ui.screens.WatchScreen
@@ -206,6 +208,10 @@ class MainActivity : ComponentActivity() {
             }
         }
         val openChannel: (String) -> Unit = { nav.navigate("channel/$it") }
+        val openShorts: (List<VideoItem>, Int) -> Unit = { list, index ->
+            ShortsQueue.items = list
+            nav.navigate("shorts/$index")
+        }
         val toggleFullscreen = {
             requestedOrientation = if (landscape) {
                 ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
@@ -213,7 +219,7 @@ class MainActivity : ComponentActivity() {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             }
         }
-        val showChrome = !onWatch && !inPip && route != "signin"
+        val showChrome = !onWatch && !inPip && route != "signin" && route?.startsWith("shorts") != true
 
         Scaffold(
             contentWindowInsets = WindowInsets(0),
@@ -238,9 +244,10 @@ class MainActivity : ComponentActivity() {
                 }
                 composable("home") {
                     TopLevel("MaterialTube") {
-                        val vm = rememberFeedViewModel("home:$signedIn", { Graph.api.home() }, { Graph.api.continuation(it) })
+                        val vm = rememberFeedViewModel("home:$signedIn", { Graph.api.homeWithShorts() }, { Graph.api.continuation(it) })
                         FeedList(
                             vm, openVideo, openChannel,
+                            onShorts = openShorts,
                             emptyText = if (signedIn) "No recommendations yet. Watch a few videos and pull to refresh." else "Sign in (Library → Sign in) to get your personalized recommendations.",
                         )
                     }
@@ -249,13 +256,18 @@ class MainActivity : ComponentActivity() {
                     TopLevel("Subscriptions") {
                         if (signedIn) {
                             val vm = rememberFeedViewModel("subs", { Graph.api.subscriptions() }, { Graph.api.continuation(it) })
-                            FeedList(vm, openVideo, openChannel, emptyText = "No uploads from your subscriptions")
+                            FeedList(
+                                vm, openVideo, openChannel,
+                                onShorts = openShorts,
+                                channelsTitle = "Your channels",
+                                emptyText = "No uploads from your subscriptions",
+                            )
                         } else {
                             Text("Sign in to see your subscriptions", Modifier.padding(16.dp))
                         }
                     }
                 }
-                composable("search") { TopLevel("Search") { SearchScreen(openVideo, openChannel) } }
+                composable("search") { TopLevel("Search") { SearchScreen(openVideo, openChannel, openShorts) } }
                 composable("library") {
                     TopLevel("Library") {
                         LibraryScreen(
@@ -277,6 +289,13 @@ class MainActivity : ComponentActivity() {
                 ) { e ->
                     val title = URLDecoder.decode(e.arguments!!.getString("title")!!, "UTF-8")
                     Sub(title, nav) { BrowseScreen(e.arguments!!.getString("id")!!, title, openVideo, openChannel) }
+                }
+                composable("shorts/{index}", listOf(navArgument("index") { type = NavType.IntType })) { e ->
+                    ShortsScreen(
+                        startIndex = e.arguments!!.getInt("index"),
+                        onChannel = openChannel,
+                        onBack = { nav.popBackStack() },
+                    )
                 }
                 composable("watch/{id}", listOf(navArgument("id") { type = NavType.StringType })) { e ->
                     val id = e.arguments!!.getString("id")!!

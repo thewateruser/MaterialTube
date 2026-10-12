@@ -53,7 +53,11 @@ import dev.materialtube.data.VideoItem
 import dev.materialtube.data.sponsorblock.SponsorBlock
 
 @Composable
-fun SearchScreen(onVideo: (VideoItem) -> Unit, onChannel: (String) -> Unit) {
+fun SearchScreen(
+    onVideo: (VideoItem) -> Unit,
+    onChannel: (String) -> Unit,
+    onShorts: (List<VideoItem>, Int) -> Unit,
+) {
     var text by rememberSaveable { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
     Column(Modifier.fillMaxSize()) {
@@ -71,7 +75,7 @@ fun SearchScreen(onVideo: (VideoItem) -> Unit, onChannel: (String) -> Unit) {
         if (query.isNotEmpty()) {
             val q = query
             val vm = rememberFeedViewModel("search:$q", { Graph.api.search(q) }, { Graph.api.searchContinuation(it) })
-            FeedList(vm, onVideo, onChannel, emptyText = "No results")
+            FeedList(vm, onVideo, onChannel, onShorts = onShorts, channelsTitle = "Channels", emptyText = "No results")
         }
     }
 }

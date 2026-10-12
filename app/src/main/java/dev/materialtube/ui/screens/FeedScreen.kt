@@ -30,11 +30,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.materialtube.data.ChannelItem
 import dev.materialtube.data.FeedPage
 import dev.materialtube.data.Shelf
 import dev.materialtube.data.VideoItem
 import dev.materialtube.ui.components.CenteredLoading
 import dev.materialtube.ui.components.ErrorState
+import dev.materialtube.ui.components.ChannelRow
+import dev.materialtube.ui.components.SectionTitle
+import dev.materialtube.ui.components.ShortsRow
 import dev.materialtube.ui.components.VideoCard
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +51,8 @@ class FeedViewModel(
     private val next: (String) -> FeedPage,
 ) : ViewModel() {
     var shelves by mutableStateOf<List<Shelf>>(emptyList())
+        private set
+    var channels by mutableStateOf<List<ChannelItem>>(emptyList())
         private set
     var loading by mutableStateOf(false)
         private set
@@ -68,6 +74,7 @@ class FeedViewModel(
             try {
                 val page = withContext(Dispatchers.IO) { first() }
                 shelves = page.shelves
+                channels = page.channels
                 continuation = page.continuation
             } catch (e: CancellationException) {
                 throw e
@@ -116,6 +123,8 @@ fun FeedList(
     vm: FeedViewModel,
     onVideo: (VideoItem) -> Unit,
     onChannel: (String) -> Unit,
+    onShorts: (List<VideoItem>, Int) -> Unit = { list, i -> onVideo(list[i]) },
+    channelsTitle: String? = null,
     modifier: Modifier = Modifier,
     emptyText: String = "Nothing here yet",
     header: (@Composable () -> Unit)? = null,
@@ -160,19 +169,30 @@ fun FeedList(
                         )
                     }
                 }
+                if (vm.channels.isNotEmpty()) {
+                    item(key = "channels") {
+                        ChannelRow(vm.channels, channelsTitle, onChannel)
+                    }
+                }
                 vm.shelves.forEachIndexed { i, shelf ->
-                    shelf.title?.let { title ->
-                        item(key = "h$i") {
-                            Text(
-                                title,
-                                style = MaterialTheme.typography.titleLargeEmphasized,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
-                            )
+                    val shorts = shelf.items.filter { it.isShort }
+                    val videos = shelf.items.filter { !it.isShort }
+                    if (videos.isNotEmpty()) {
+                        shelf.title?.let { title ->
+                            item(key = "h$i") { SectionTitle(title) }
+                        }
+                        items(videos, key = { "$i-${it.id}" }) { v ->
+                            VideoCard(v, onClick = { onVideo(v) }, onChannel = onChannel)
                         }
                     }
-                    items(shelf.items, key = { "$i-${it.id}" }) { v ->
-                        VideoCard(v, onClick = { onVideo(v) }, onChannel = onChannel)
+                    if (shorts.isNotEmpty()) {
+                        item(key = "s$i") {
+                            ShortsRow(
+                                title = if (videos.isEmpty()) shelf.title ?: "Shorts" else "Shorts",
+                                items = shorts,
+                                onClick = { index -> onShorts(shorts, index) },
+                            )
+                        }
                     }
                 }
                 if (vm.canLoadMore) {

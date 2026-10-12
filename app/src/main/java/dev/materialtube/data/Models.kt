@@ -12,11 +12,26 @@ data class VideoItem(
     val isLive: Boolean = false,
     /** 0-100 when YouTube reports a resume position for this account. */
     val watchedPercent: Int? = null,
+    /** A YouTube Short (vertical, shown in the Shorts row / player). */
+    val isShort: Boolean = false,
+)
+
+data class ChannelItem(
+    val id: String,
+    val title: String,
+    val avatar: String? = null,
+    /** e.g. "1.2M subscribers" */
+    val subtitle: String? = null,
 )
 
 data class Shelf(val title: String?, val items: List<VideoItem>)
 
-data class FeedPage(val shelves: List<Shelf>, val continuation: String?)
+data class FeedPage(
+    val shelves: List<Shelf>,
+    val continuation: String?,
+    /** Channels found in the response (search results, subscription list). */
+    val channels: List<ChannelItem> = emptyList(),
+)
 
 data class PlaybackTracking(
     val playbackUrl: String?,
@@ -45,6 +60,8 @@ data class PlayerInfo(
 )
 
 enum class LikeStatus { LIKE, DISLIKE, INDIFFERENT }
+
+data class CommentSort(val label: String, val token: String)
 
 data class NextInfo(
     val related: List<VideoItem>,
