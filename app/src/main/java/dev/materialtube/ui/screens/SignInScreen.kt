@@ -1,5 +1,6 @@
 package dev.materialtube.ui.screens
 
+import dev.materialtube.ui.components.pressBounce
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -140,7 +141,7 @@ fun SignInScreen(onDone: () -> Unit, onSkip: () -> Unit) {
             Text("2. Open Google's page, paste the code, pick your account and allow access", textAlign = TextAlign.Center)
             Button(
                 onClick = { openDevicePage(context, dc) },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier.fillMaxWidth().height(56.dp).pressBounce(0.96f),
                 shapes = ButtonDefaults.shapes(),
             ) { Text("Copy code & open google.com/device", style = MaterialTheme.typography.titleMedium) }
             Text(
@@ -151,10 +152,10 @@ fun SignInScreen(onDone: () -> Unit, onSkip: () -> Unit) {
             )
             LoadingIndicator()
         } else if (!vm.done) {
-            OutlinedButton(onClick = { vm.start() }, shapes = ButtonDefaults.shapes()) { Text("Get a new code") }
+            OutlinedButton(onClick = { vm.start() }, shapes = ButtonDefaults.shapes(), modifier = Modifier.pressBounce()) { Text("Get a new code") }
         }
         vm.status?.let { Text(it, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        TextButton(onClick = onSkip) { Text("Continue without signing in") }
+        TextButton(onClick = onSkip, modifier = Modifier.pressBounce()) { Text("Continue without signing in") }
     }
 }
 

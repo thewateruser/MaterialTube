@@ -7,6 +7,22 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -88,7 +104,8 @@ import dev.materialtube.data.VideoItem
 import dev.materialtube.player.PlayerController
 import dev.materialtube.streams.Comment
 import dev.materialtube.streams.Comments
-import dev.materialtube.ui.components.AvatarShape
+import dev.materialtube.ui.components.bounceClick
+import dev.materialtube.ui.components.pressBounce
 import dev.materialtube.ui.components.CompactVideoRow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -293,7 +310,7 @@ fun VideoPlayer(
             ) {
                 Text("Playback failed: $msg", color = Color.White, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(8.dp))
-                Button(onClick = { PlayerController.retry() }, shapes = ButtonDefaults.shapes()) { Text("Retry") }
+                Button(onClick = { PlayerController.retry() }, shapes = ButtonDefaults.shapes(), modifier = Modifier.pressBounce()) { Text("Retry") }
             }
         }
     }
@@ -308,6 +325,7 @@ fun WatchScreen(
     onToggleFullscreen: () -> Unit,
     onVideo: (VideoItem) -> Unit,
     onChannel: (String) -> Unit,
+    onMinimize: () -> Unit,
 ) {
     LaunchedEffect(videoId) { PlayerController.play(videoId, hint) }
     val nowPlaying by PlayerController.nowPlaying.collectAsState()
@@ -317,14 +335,65 @@ fun WatchScreen(
     val toast: (String) -> Unit = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
     var showComments by remember { mutableStateOf(false) }
 
+    // Drag the video down: minimise into the floating mini player (or leave fullscreen).
+    val dragY = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val screenHeight = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    val threshold = with(density) { 120.dp.toPx() }
+    val dragToMinimize = Modifier.dragDown(
+        onDrag = { dy -> scope.launch { dragY.snapTo((dragY.value + dy).coerceAtLeast(0f)) } },
+        onEnd = {
+            scope.launch {
+                if (dragY.value > threshold) {
+                    if (fullscreen) {
+                        onToggleFullscreen()
+                        dragY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                    } else {
+                        dragY.animateTo(screenHeight * 0.6f, tween(160))
+                        onMinimize()
+                    }
+                } else {
+                    dragY.animateTo(0f, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMediumLow))
+                }
+            }
+        },
+    )
+    val progress = (dragY.value / (screenHeight * 0.6f)).coerceIn(0f, 1f)
+
     if (fullscreen || inPip) {
-        VideoPlayer(Modifier.fillMaxSize(), fullscreen = true, showControls = !inPip, onToggleFullscreen = onToggleFullscreen)
+        VideoPlayer(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    translationY = dragY.value
+                    scaleX = 1f - progress * 0.2f
+                    scaleY = 1f - progress * 0.2f
+                }
+                .then(if (inPip) Modifier else dragToMinimize),
+            fullscreen = true,
+            showControls = !inPip,
+            onToggleFullscreen = onToggleFullscreen,
+        )
         return
     }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                translationY = dragY.value
+                val scale = 1f - progress * 0.25f
+                scaleX = scale
+                scaleY = scale
+                transformOrigin = TransformOrigin(0.5f, 0f)
+                alpha = 1f - progress * 0.6f
+            }
+            .statusBarsPadding()
+            .navigationBarsPadding(),
+    ) {
         VideoPlayer(
-            Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+            Modifier.fillMaxWidth().aspectRatio(16f / 9f).then(dragToMinimize),
             fullscreen = false,
             showControls = true,
             onToggleFullscreen = onToggleFullscreen,
@@ -339,7 +408,7 @@ fun WatchScreen(
                     onClick = { expanded = !expanded },
                     shape = MaterialTheme.shapes.large,
                     color = MaterialTheme.colorScheme.surfaceContainer,
-                    modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp).pressBounce(0.98f),
                 ) {
                     Column(Modifier.animateContentSize().padding(16.dp)) {
                         Text(
@@ -383,14 +452,14 @@ fun WatchScreen(
                         Modifier
                             .weight(1f)
                             .clip(MaterialTheme.shapes.medium)
-                            .clickable(enabled = channelId != null) { channelId?.let(onChannel) }
+                            .bounceClick(enabled = channelId != null) { channelId?.let(onChannel) }
                             .padding(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         AsyncImage(
                             model = next?.channelAvatar,
                             contentDescription = null,
-                            modifier = Modifier.size(44.dp).clip(AvatarShape).background(MaterialTheme.colorScheme.primaryContainer),
+                            modifier = Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
                         )
                         Spacer(Modifier.size(12.dp))
                         Text(
@@ -405,6 +474,7 @@ fun WatchScreen(
                         ToggleButton(
                             checked = subscribed,
                             onCheckedChange = { vm.toggleSubscribe(channelId, toast) },
+                            modifier = Modifier.pressBounce(),
                         ) {
                             if (subscribed) {
                                 Icon(Icons.Outlined.NotificationsActive, null, Modifier.size(ToggleButtonDefaults.IconSize))
@@ -427,6 +497,7 @@ fun WatchScreen(
                             ToggleButton(
                                 checked = vm.like == LikeStatus.LIKE,
                                 onCheckedChange = { vm.toggleLike(LikeStatus.LIKE, toast) },
+                                modifier = Modifier.pressBounce(0.88f),
                             ) {
                                 Icon(
                                     if (vm.like == LikeStatus.LIKE) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
@@ -441,6 +512,7 @@ fun WatchScreen(
                             ToggleButton(
                                 checked = vm.like == LikeStatus.DISLIKE,
                                 onCheckedChange = { vm.toggleLike(LikeStatus.DISLIKE, toast) },
+                                modifier = Modifier.pressBounce(0.88f),
                             ) {
                                 Icon(
                                     if (vm.like == LikeStatus.DISLIKE) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
@@ -451,7 +523,7 @@ fun WatchScreen(
                         }
                     }
                     QualityButton(np?.height, np?.availableHeights.orEmpty())
-                    FilledTonalButton(onClick = { share(context, videoId) }, shapes = ButtonDefaults.shapes()) {
+                    FilledTonalButton(onClick = { share(context, videoId) }, shapes = ButtonDefaults.shapes(), modifier = Modifier.pressBounce()) {
                         Icon(Icons.Filled.Share, null, Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text("Share")
@@ -495,7 +567,7 @@ private fun CommentsTeaser(vm: WatchViewModel, onOpen: () -> Unit) {
         enabled = vm.commentsState == WatchViewModel.CommentsState.Ready,
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp).pressBounce(0.98f),
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -512,7 +584,7 @@ private fun CommentsTeaser(vm: WatchViewModel, onOpen: () -> Unit) {
                 WatchViewModel.CommentsState.Loading -> LoadingIndicator(Modifier.size(32.dp))
                 WatchViewModel.CommentsState.Disabled ->
                     Text("Comments are turned off", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                WatchViewModel.CommentsState.Error -> TextButton(onClick = vm::loadComments) { Text("Couldn't load comments · Retry") }
+                WatchViewModel.CommentsState.Error -> TextButton(onClick = vm::loadComments, modifier = Modifier.pressBounce()) { Text("Couldn't load comments · Retry") }
                 WatchViewModel.CommentsState.Ready -> {
                     val top = vm.comments.firstOrNull()
                     if (top == null) {
@@ -522,7 +594,7 @@ private fun CommentsTeaser(vm: WatchViewModel, onOpen: () -> Unit) {
                             AsyncImage(
                                 model = top.avatar,
                                 contentDescription = null,
-                                modifier = Modifier.size(28.dp).clip(AvatarShape).background(MaterialTheme.colorScheme.secondaryContainer),
+                                modifier = Modifier.size(28.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
                             )
                             Spacer(Modifier.size(10.dp))
                             Text(commentText(top), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
@@ -554,6 +626,7 @@ internal fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit) {
                         onClick = { vm.selectSort(index) },
                         shape = SegmentedButtonDefaults.itemShape(index, vm.sorts.size),
                         label = { Text(sort.label) },
+                        modifier = Modifier.pressBounce(0.95f),
                     )
                 }
             }
@@ -571,7 +644,7 @@ internal fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit) {
                 if (canExpand) {
                     TextButton(
                         onClick = { vm.loadReplies(c) },
-                        modifier = Modifier.padding(start = 60.dp),
+                        modifier = Modifier.padding(start = 60.dp).pressBounce(),
                     ) {
                         Text(if (loaded == null) "${c.replyCount} ${if (c.replyCount == 1) "reply" else "replies"}" else "More replies")
                     }
@@ -596,7 +669,7 @@ private fun CommentRow(c: Comment, isReply: Boolean) {
         AsyncImage(
             model = c.avatar,
             contentDescription = null,
-            modifier = Modifier.size(if (isReply) 28.dp else 36.dp).clip(AvatarShape).background(MaterialTheme.colorScheme.secondaryContainer),
+            modifier = Modifier.size(if (isReply) 28.dp else 36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -642,7 +715,7 @@ private fun QualityButton(current: Int?, heights: List<Int>) {
     if (heights.isEmpty()) return
     var open by remember { mutableStateOf(false) }
     Box {
-        FilledTonalButton(onClick = { open = true }, shapes = ButtonDefaults.shapes()) {
+        FilledTonalButton(onClick = { open = true }, shapes = ButtonDefaults.shapes(), modifier = Modifier.pressBounce()) {
             Icon(Icons.Filled.HighQuality, null, Modifier.size(ButtonDefaults.IconSize))
             Spacer(Modifier.size(ButtonDefaults.IconSpacing))
             Text(current?.let { "${it}p" } ?: "Auto")
@@ -666,4 +739,38 @@ internal fun share(context: Context, videoId: String) {
         .setType("text/plain")
         .putExtra(Intent.EXTRA_TEXT, "https://youtu.be/$videoId")
     context.startActivity(Intent.createChooser(intent, "Share"))
+}
+
+/**
+ * Detects a downward drag that starts on this element, even on top of the PlayerView (watches the
+ * initial pass, then takes over the gesture once it is clearly a downward drag so taps still reach
+ * the player controls).
+ */
+private fun Modifier.dragDown(onDrag: (Float) -> Unit, onEnd: () -> Unit): Modifier = pointerInput(Unit) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        var dragging = false
+        var total = Offset.Zero
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+            if (!change.pressed) break
+            val delta = change.positionChange()
+            if (!dragging) {
+                total += delta
+                if (total.getDistance() > viewConfiguration.touchSlop) {
+                    if (total.y > 0 && kotlin.math.abs(total.y) > kotlin.math.abs(total.x) * 1.5f) {
+                        dragging = true
+                        onDrag(total.y)
+                    } else {
+                        break // sideways/upward: leave it to the player
+                    }
+                }
+            } else {
+                onDrag(delta.y)
+            }
+            if (dragging) change.consume()
+        }
+        if (dragging) onEnd()
+    }
 }

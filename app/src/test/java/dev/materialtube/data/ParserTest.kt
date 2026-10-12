@@ -136,4 +136,19 @@ class ParserTest {
         )
         assertEquals(listOf(CommentSort("Top", "TOP"), CommentSort("Newest", "NEW")), Parser.commentSorts(json))
     }
+
+    @Test
+    fun mixesShortsRowsRegularly() {
+        fun v(id: String, short: Boolean = false) = VideoItem(id, id, isShort = short)
+        var n = 0
+        val shortsPage = { FeedPage(listOf(Shelf(null, List(12) { v("s${n++}", true) })), "more") }
+        val mixer = dev.materialtube.data.innertube.ShortsMixer(search = { shortsPage() }, more = { shortsPage() })
+        val home = FeedPage(List(6) { i -> Shelf("Shelf $i", List(5) { j -> v("v$i-$j") }) }, null)
+        val mixed = mixer.mix(home)
+        val titles = mixed.shelves.map { it.title }
+        // a Shorts row after every ~8 videos (every 2 shelves of 5)
+        assertEquals(listOf("Shelf 0", "Shelf 1", "Shorts", "Shelf 2", "Shelf 3", "Shorts", "Shelf 4", "Shelf 5", "Shorts"), titles)
+        val ids = mixed.shelves.filter { it.title == "Shorts" }.flatMap { it.items.map { s -> s.id } }
+        assertEquals(ids.size, ids.toSet().size) // no repeats
+    }
 }

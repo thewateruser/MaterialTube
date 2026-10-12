@@ -40,20 +40,18 @@ class InnerTube(
     }
 
     /** Subscription uploads plus the list of subscribed channels (for the channel row). */
-    /** Home feed with a Shorts row: YouTube's own if the feed has one, otherwise from the Shorts feed. */
+    private val homeShorts = ShortsMixer(search = { search(it) }, more = { searchContinuation(it) })
+
+    /** Home feed with Shorts rows mixed in regularly (see [ShortsMixer]). */
     fun homeWithShorts(): FeedPage {
-        val page = home()
-        if (page.shelves.any { s -> s.items.any { it.isShort } }) return page
-        val shorts = runCatching { shortsShelf() }.getOrNull() ?: return page
-        val shelves = page.shelves.toMutableList()
-        shelves.add(minOf(1, shelves.size), shorts)
-        return page.copy(shelves = shelves)
+        homeShorts.reset()
+        return homeShorts.mix(home())
     }
 
-    /**
-     * A row of Shorts for when the home feed has none. YouTube's Shorts tab isn't available to the
-     * TV client, but its (signed-in, so personalised) search returns Shorts lockups.
-     */
+    /** Next home page, with more Shorts rows mixed in. */
+    fun homeContinuation(token: String): FeedPage = homeShorts.mix(continuation(token))
+
+    /** A single row of Shorts (from the Shorts search), e.g. for testing. */
     fun shortsShelf(): dev.materialtube.data.Shelf? {
         val items = search("shorts").shelves.flatMap { it.items }.filter { it.isShort }.distinctBy { it.id }
         return if (items.size >= 3) dev.materialtube.data.Shelf("Shorts", items.take(30)) else null

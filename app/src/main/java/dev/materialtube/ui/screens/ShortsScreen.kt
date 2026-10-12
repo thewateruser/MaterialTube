@@ -2,6 +2,9 @@
 
 package dev.materialtube.ui.screens
 
+import androidx.compose.foundation.shape.CircleShape
+import dev.materialtube.ui.components.pressBounce
+import dev.materialtube.ui.components.bounceClick
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
@@ -60,7 +63,6 @@ import dev.materialtube.Graph
 import dev.materialtube.data.LikeStatus
 import dev.materialtube.data.VideoItem
 import dev.materialtube.player.PlayerController
-import dev.materialtube.ui.components.AvatarShape
 
 /** The list the Shorts player swipes through (set right before navigating to it). */
 object ShortsQueue {
@@ -93,7 +95,7 @@ fun ShortsScreen(startIndex: Int, onChannel: (String) -> Unit, onBack: () -> Uni
         FilledTonalIconButton(
             onClick = onBack,
             shapes = IconButtonDefaults.shapes(),
-            modifier = Modifier.statusBarsPadding().padding(8.dp),
+            modifier = Modifier.statusBarsPadding().padding(8.dp).pressBounce(),
         ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
     }
 }
@@ -154,12 +156,12 @@ private fun ShortPage(item: VideoItem, active: Boolean, onChannel: (String) -> U
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .clip(MaterialTheme.shapes.medium)
-                        .clickable(enabled = channelId != null) { channelId?.let(onChannel) },
+                        .bounceClick(enabled = channelId != null) { channelId?.let(onChannel) },
                 ) {
                     AsyncImage(
                         model = next?.channelAvatar,
                         contentDescription = null,
-                        modifier = Modifier.size(36.dp).clip(AvatarShape).background(MaterialTheme.colorScheme.primaryContainer),
+                        modifier = Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
                     )
                     Spacer(Modifier.size(8.dp))
                     Text(
@@ -185,12 +187,13 @@ private fun ShortPage(item: VideoItem, active: Boolean, onChannel: (String) -> U
                         checked = liked,
                         onCheckedChange = { vm.toggleLike(LikeStatus.LIKE, toast) },
                         shapes = IconButtonDefaults.toggleableShapes(),
+                        modifier = Modifier.pressBounce(0.85f),
                     ) { Icon(if (liked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp, "Like") }
                 }
-                FilledTonalIconButton(onClick = { showComments = true }, shapes = IconButtonDefaults.shapes()) {
+                FilledTonalIconButton(onClick = { showComments = true }, shapes = IconButtonDefaults.shapes(), modifier = Modifier.pressBounce(0.85f)) {
                     Icon(Icons.AutoMirrored.Outlined.Comment, "Comments")
                 }
-                FilledTonalIconButton(onClick = { share(context, item.id) }, shapes = IconButtonDefaults.shapes()) {
+                FilledTonalIconButton(onClick = { share(context, item.id) }, shapes = IconButtonDefaults.shapes(), modifier = Modifier.pressBounce(0.85f)) {
                     Icon(Icons.Filled.Share, "Share")
                 }
             }

@@ -1,6 +1,43 @@
 package dev.materialtube.ui
 
 import android.Manifest
+import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
+import androidx.navigation.NavBackStackEntry
+import android.provider.Settings
+import android.view.OrientationEventListener
+import dev.materialtube.ui.components.pressBounce
+import kotlin.math.roundToInt
 import android.app.PictureInPictureParams
 import android.content.ComponentName
 import android.content.Intent
@@ -37,12 +74,10 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Scaffold
@@ -83,7 +118,6 @@ import dev.materialtube.Graph
 import dev.materialtube.data.VideoItem
 import dev.materialtube.player.PlaybackService
 import dev.materialtube.player.PlayerController
-import dev.materialtube.ui.components.Thumbnail
 import dev.materialtube.ui.screens.BrowseScreen
 import dev.materialtube.ui.screens.ChannelScreen
 import dev.materialtube.ui.screens.FeedList
@@ -161,8 +195,47 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        orientationListener.disable()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onDestroy()
+    }
+
+    /**
+     * Orientation: the fullscreen button locks landscape/portrait; the lock is released (back to
+     * following the sensor) as soon as the phone is physically held that way. Without the
+     * release, a "portrait" lock left over from exiting fullscreen kept snapping the app back to
+     * portrait when you rotated the phone.
+     */
+    private var releaseWhen: Int? = null
+    private val orientationListener by lazy {
+        object : OrientationEventListener(this) {
+            override fun onOrientationChanged(degrees: Int) {
+                val target = releaseWhen ?: return
+                if (degrees == ORIENTATION_UNKNOWN) return
+                val portrait = degrees <= 25 || degrees >= 335 || degrees in 155..205
+                val landscape = degrees in 65..115 || degrees in 245..295
+                val autoRotate = Settings.System.getInt(contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) == 1
+                val reached = (target == Configuration.ORIENTATION_PORTRAIT && portrait) ||
+                    (target == Configuration.ORIENTATION_LANDSCAPE && landscape && autoRotate)
+                if (reached) {
+                    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    releaseWhen = null
+                    disable()
+                }
+            }
+        }
+    }
+
+    private fun lockOrientation(landscape: Boolean) {
+        requestedOrientation = if (landscape) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+        releaseWhen = if (landscape) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
+        if (orientationListener.canDetectOrientation()) orientationListener.enable() else {
+            if (!landscape) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
     }
 
     private fun setSystemBarsHidden(on: Boolean) {
@@ -189,7 +262,8 @@ class MainActivity : ComponentActivity() {
 
         LaunchedEffect(fullscreen) { setSystemBarsHidden(fullscreen) }
         LaunchedEffect(onWatch) {
-            if (!onWatch) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            // Leaving the player while it was locked to landscape: go back to portrait.
+            if (!onWatch && requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) lockOrientation(false)
         }
         LaunchedEffect(pendingVideo) {
             pendingVideo?.let { id ->
@@ -197,7 +271,7 @@ class MainActivity : ComponentActivity() {
                 nav.navigate("watch/$id") { launchSingleTop = true }
             }
         }
-        BackHandler(enabled = fullscreen) { requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT }
+        BackHandler(enabled = fullscreen) { lockOrientation(false) }
 
         val openVideo: (VideoItem) -> Unit = { v ->
             Hints.put(v)
@@ -212,27 +286,43 @@ class MainActivity : ComponentActivity() {
             ShortsQueue.items = list
             nav.navigate("shorts/$index")
         }
-        val toggleFullscreen = {
-            requestedOrientation = if (landscape) {
-                ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
-            } else {
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            }
-        }
+        val toggleFullscreen = { lockOrientation(!landscape) }
         val showChrome = !onWatch && !inPip && route != "signin" && route?.startsWith("shorts") != true
 
+        val miniVisible = !onWatch && !inPip && route != "signin" && route?.startsWith("shorts") != true
+
+        Box(Modifier.fillMaxSize()) {
         Scaffold(
             contentWindowInsets = WindowInsets(0),
             bottomBar = {
-                if (showChrome) {
-                    Column {
-                        MiniPlayer(onOpen = { id -> nav.navigate("watch/$id") { launchSingleTop = true } })
-                        BottomBar(nav, route)
-                    }
-                }
+                AnimatedVisibility(
+                    visible = showChrome,
+                    enter = slideInVertically(tween(260, easing = EmphasizedDecelerate)) { it } + fadeIn(),
+                    exit = slideOutVertically(tween(200)) { it } + fadeOut(),
+                ) { BottomBar(nav, route) }
             },
         ) { padding ->
-            NavHost(nav, startDestination = start, modifier = Modifier.padding(padding)) {
+            NavHost(
+                nav,
+                startDestination = start,
+                modifier = Modifier.padding(padding),
+                enterTransition = {
+                    if (isTabSwitch()) {
+                        fadeIn(tween(220, delayMillis = 70)) + scaleIn(tween(260, delayMillis = 70, easing = EmphasizedDecelerate), initialScale = 0.94f)
+                    } else {
+                        slideInHorizontally(tween(320, easing = EmphasizedDecelerate)) { it / 5 } + fadeIn(tween(220))
+                    }
+                },
+                exitTransition = {
+                    if (isTabSwitch()) fadeOut(tween(90)) else slideOutHorizontally(tween(320, easing = EmphasizedDecelerate)) { -it / 10 } + fadeOut(tween(200))
+                },
+                popEnterTransition = {
+                    if (isTabSwitch()) fadeIn(tween(220, delayMillis = 70)) else slideInHorizontally(tween(320, easing = EmphasizedDecelerate)) { -it / 10 } + fadeIn(tween(220))
+                },
+                popExitTransition = {
+                    if (isTabSwitch()) fadeOut(tween(90)) else slideOutHorizontally(tween(280, easing = EmphasizedDecelerate)) { it / 5 } + fadeOut(tween(180))
+                },
+            ) {
                 composable("signin") {
                     SignInScreen(
                         onDone = { nav.navigate("home") { popUpTo(0) } },
@@ -244,7 +334,7 @@ class MainActivity : ComponentActivity() {
                 }
                 composable("home") {
                     TopLevel("MaterialTube") {
-                        val vm = rememberFeedViewModel("home:$signedIn", { Graph.api.homeWithShorts() }, { Graph.api.continuation(it) })
+                        val vm = rememberFeedViewModel("home:$signedIn", { Graph.api.homeWithShorts() }, { Graph.api.homeContinuation(it) })
                         FeedList(
                             vm, openVideo, openChannel,
                             onShorts = openShorts,
@@ -290,14 +380,24 @@ class MainActivity : ComponentActivity() {
                     val title = URLDecoder.decode(e.arguments!!.getString("title")!!, "UTF-8")
                     Sub(title, nav) { BrowseScreen(e.arguments!!.getString("id")!!, title, openVideo, openChannel) }
                 }
-                composable("shorts/{index}", listOf(navArgument("index") { type = NavType.IntType })) { e ->
+                composable(
+                    "shorts/{index}",
+                    listOf(navArgument("index") { type = NavType.IntType }),
+                    enterTransition = { fadeIn(tween(220)) + scaleIn(tween(300, easing = EmphasizedDecelerate), initialScale = 0.9f) },
+                    popExitTransition = { fadeOut(tween(180)) + scaleOut(tween(220), targetScale = 0.9f) },
+                ) { e ->
                     ShortsScreen(
                         startIndex = e.arguments!!.getInt("index"),
                         onChannel = openChannel,
                         onBack = { nav.popBackStack() },
                     )
                 }
-                composable("watch/{id}", listOf(navArgument("id") { type = NavType.StringType })) { e ->
+                composable(
+                    "watch/{id}",
+                    listOf(navArgument("id") { type = NavType.StringType }),
+                    enterTransition = { slideInVertically(tween(340, easing = EmphasizedDecelerate)) { it / 3 } + fadeIn(tween(220)) },
+                    popExitTransition = { fadeOut(tween(160)) + scaleOut(tween(200), targetScale = 0.9f) },
+                ) { e ->
                     val id = e.arguments!!.getString("id")!!
                     WatchScreen(
                         videoId = id,
@@ -307,9 +407,16 @@ class MainActivity : ComponentActivity() {
                         onToggleFullscreen = toggleFullscreen,
                         onVideo = openVideo,
                         onChannel = openChannel,
+                        onMinimize = { nav.popBackStack() },
                     )
                 }
             }
+        }
+        FloatingMiniPlayer(
+            visible = miniVisible,
+            bottomInset = if (showChrome) 80.dp else 0.dp,
+            onOpen = { id -> nav.navigate("watch/$id") { launchSingleTop = true } },
+        )
         }
     }
 
@@ -358,7 +465,7 @@ private fun Sub(title: String, nav: NavHostController, content: @Composable () -
         TopAppBar(
             title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLargeEmphasized) },
             navigationIcon = {
-                FilledTonalIconButton(onClick = { nav.popBackStack() }, shapes = IconButtonDefaults.shapes()) {
+                FilledTonalIconButton(onClick = { nav.popBackStack() }, shapes = IconButtonDefaults.shapes(), modifier = Modifier.pressBounce(0.85f)) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                 }
             },
@@ -391,53 +498,108 @@ private fun BottomBar(nav: NavHostController, route: String?) {
                 },
                 icon = { Icon(tab.icon, tab.label) },
                 label = { Text(tab.label, maxLines = 1) },
+                modifier = Modifier.pressBounce(0.86f),
             )
         }
     }
 }
 
+private val TAB_ROUTES = setOf("home", "subs", "search", "library")
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch() =
+    initialState.destination.route in TAB_ROUTES && targetState.destination.route in TAB_ROUTES
+
+/** Material 3 "emphasized decelerate" easing. */
+private val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+
+/** Remembers where you left the mini player, across screens. */
+private object MiniPlayerPosition {
+    var offset: Offset? = null
+}
+
+/** Floating, draggable video window shown while browsing. Tap to reopen, drag anywhere. */
+@OptIn(UnstableApi::class)
 @Composable
-private fun MiniPlayer(onOpen: (String) -> Unit) {
+private fun FloatingMiniPlayer(visible: Boolean, bottomInset: Dp, onOpen: (String) -> Unit) {
     val np by PlayerController.nowPlaying.collectAsState()
-    val current = np ?: return
-    var playing by remember { mutableStateOf(PlayerController.player.isPlaying) }
-    DisposableEffect(Unit) {
-        val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
-        }
-        PlayerController.player.addListener(listener)
-        onDispose { PlayerController.player.removeListener(listener) }
-    }
-    Surface(
-        onClick = { onOpen(current.videoId) },
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 3.dp,
-        shadowElevation = 6.dp,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+    val current = np
+    AnimatedVisibility(
+        visible = visible && current != null,
+        enter = fadeIn(tween(200)) + scaleIn(tween(280, easing = EmphasizedDecelerate), initialScale = 0.6f),
+        exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.6f),
     ) {
-        Row(
-            Modifier.height(68.dp).padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        val videoId = current?.videoId ?: return@AnimatedVisibility
+        var playing by remember { mutableStateOf(PlayerController.player.isPlaying) }
+        DisposableEffect(Unit) {
+            val listener = object : Player.Listener {
+                override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
+            }
+            PlayerController.player.addListener(listener)
+            onDispose { PlayerController.player.removeListener(listener) }
+        }
+        BoxWithConstraints(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = bottomInset + 12.dp),
         ) {
-            Thumbnail(
-                VideoItem(current.videoId, current.title, thumbnail = current.thumbnail),
-                Modifier.width(92.dp),
-                rounded = true,
-            )
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(current.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmallEmphasized)
-                current.channel?.let {
-                    Text(it, maxLines = 1, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            FilledIconButton(
-                onClick = { if (playing) PlayerController.player.pause() else PlayerController.player.play() },
-                shapes = IconButtonDefaults.shapes(),
+            val density = LocalDensity.current
+            val width = 208.dp
+            val height = width * 9f / 16f
+            val maxX = constraints.maxWidth - with(density) { width.toPx() }
+            val maxY = constraints.maxHeight - with(density) { height.toPx() }
+            fun clamp(o: Offset) = Offset(o.x.coerceIn(0f, maxX.coerceAtLeast(0f)), o.y.coerceIn(0f, maxY.coerceAtLeast(0f)))
+            var offset by remember { mutableStateOf(clamp(MiniPlayerPosition.offset ?: Offset(maxX, maxY))) }
+            LaunchedEffect(maxX, maxY) { offset = clamp(offset) }
+            val shape = MaterialTheme.shapes.large
+            Box(
+                Modifier
+                    .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
+                    .size(width, height)
+                    .pressBounce(0.95f)
+                    .shadow(12.dp, shape)
+                    .clip(shape)
+                    .background(Color.Black)
+                    .pointerInput(maxX, maxY) {
+                        detectDragGestures(
+                            onDragEnd = { MiniPlayerPosition.offset = offset },
+                        ) { change, drag ->
+                            change.consume()
+                            offset = clamp(offset + drag)
+                        }
+                    }
+                    .pointerInput(videoId) { detectTapGestures(onTap = { onOpen(videoId) }) },
             ) {
-                Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/pause")
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            player = PlayerController.player
+                            useController = false
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
+                    },
+                    onRelease = { it.player = null },
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Brush.verticalGradient(0f to Color(0x66000000), 0.35f to Color.Transparent, 0.65f to Color.Transparent, 1f to Color(0x99000000))),
+                )
+                FilledTonalIconButton(
+                    onClick = { if (playing) PlayerController.player.pause() else PlayerController.player.play() },
+                    shapes = IconButtonDefaults.shapes(),
+                    modifier = Modifier.align(Alignment.BottomStart).padding(4.dp).size(36.dp).pressBounce(0.82f),
+                ) {
+                    Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/pause", Modifier.size(20.dp))
+                }
+                FilledTonalIconButton(
+                    onClick = { PlayerController.close() },
+                    shapes = IconButtonDefaults.shapes(),
+                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(32.dp).pressBounce(0.82f),
+                ) { Icon(Icons.Filled.Close, "Close", Modifier.size(18.dp)) }
             }
-            IconButton(onClick = { PlayerController.close() }) { Icon(Icons.Filled.Close, "Close") }
         }
     }
 }

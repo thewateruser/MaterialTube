@@ -1,5 +1,7 @@
 package dev.materialtube.ui.screens
 
+import dev.materialtube.ui.components.pressBounce
+import dev.materialtube.ui.components.bounceClick
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -133,7 +135,7 @@ fun LibraryScreen(onOpen: (browseId: String, title: String) -> Unit, onSettings:
             },
             leadingContent = { Icon(Icons.Filled.AccountCircle, null, Modifier.size(40.dp)) },
             trailingContent = if (!signedIn) {
-                { Button(onClick = onSignIn, shapes = ButtonDefaults.shapes()) { Text("Sign in") } }
+                { Button(onClick = onSignIn, shapes = ButtonDefaults.shapes(), modifier = Modifier.pressBounce()) { Text("Sign in") } }
             } else {
                 null
             },
@@ -154,7 +156,7 @@ private fun LibraryEntry(icon: androidx.compose.ui.graphics.vector.ImageVector, 
     ListItem(
         headlineContent = { Text(label) },
         leadingContent = { Icon(icon, null) },
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.bounceClick(pressedScale = 0.97f, onClick = onClick),
     )
 }
 
@@ -181,7 +183,7 @@ fun SettingsScreen(onSignIn: () -> Unit) {
             ListItem(
                 headlineContent = { Text("${h}p") },
                 leadingContent = { RadioButton(selected = quality == h, onClick = null) },
-                modifier = Modifier.clickable { quality = h; prefs.maxQuality = h },
+                modifier = Modifier.bounceClick(pressedScale = 0.97f) { quality = h; prefs.maxQuality = h },
             )
         }
         Header("SponsorBlock")
@@ -194,7 +196,7 @@ fun SettingsScreen(onSignIn: () -> Unit) {
                 ListItem(
                     headlineContent = { Text(label) },
                     leadingContent = { Checkbox(checked = checked, onCheckedChange = null) },
-                    modifier = Modifier.clickable {
+                    modifier = Modifier.bounceClick(pressedScale = 0.97f) {
                         categories = if (checked) categories - key else categories + key
                         prefs.sponsorBlockCategories = categories.toSet()
                     },
@@ -207,13 +209,13 @@ fun SettingsScreen(onSignIn: () -> Unit) {
                 headlineContent = { Text("Sign out") },
                 supportingContent = { Text("You can also revoke access at myaccount.google.com → Security → Third-party connections") },
                 leadingContent = { Icon(Icons.AutoMirrored.Filled.Logout, null) },
-                modifier = Modifier.clickable { Graph.signOut() },
+                modifier = Modifier.bounceClick(pressedScale = 0.97f) { Graph.signOut() },
             )
         } else {
             ListItem(
                 headlineContent = { Text("Sign in with Google") },
                 leadingContent = { Icon(Icons.Filled.AccountCircle, null) },
-                modifier = Modifier.clickable(onClick = onSignIn),
+                modifier = Modifier.bounceClick(pressedScale = 0.97f, onClick = onSignIn),
             )
         }
     }
@@ -235,6 +237,6 @@ private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChang
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle) },
         trailingContent = { Switch(checked = checked, onCheckedChange = null) },
-        modifier = Modifier.clickable { onChange(!checked) },
+        modifier = Modifier.bounceClick(pressedScale = 0.97f) { onChange(!checked) },
     )
 }

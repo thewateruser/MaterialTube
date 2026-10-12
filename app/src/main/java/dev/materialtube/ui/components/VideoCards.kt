@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -90,7 +89,7 @@ fun VideoCard(item: VideoItem, onClick: () -> Unit, onChannel: ((String) -> Unit
     Column(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .bounceClick(pressedScale = 0.97f, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
         Thumbnail(item, Modifier.fillMaxWidth())
@@ -105,7 +104,7 @@ fun VideoCard(item: VideoItem, onClick: () -> Unit, onChannel: ((String) -> Unit
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = if (onChannel != null && item.channelId != null) {
-                    Modifier.clickable { onChannel(item.channelId) }
+                    Modifier.bounceClick { onChannel(item.channelId) }
                 } else {
                     Modifier
                 },
@@ -120,7 +119,7 @@ fun CompactVideoRow(item: VideoItem, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .bounceClick(pressedScale = 0.97f, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -154,7 +153,7 @@ fun ErrorState(message: String, onRetry: () -> Unit, modifier: Modifier = Modifi
     ) {
         Text(message, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
-        Button(onClick = onRetry, shapes = ButtonDefaults.shapes()) { Text("Retry") }
+        Button(onClick = onRetry, shapes = ButtonDefaults.shapes(), modifier = Modifier.pressBounce()) { Text("Retry") }
     }
 }
 
@@ -182,7 +181,7 @@ fun ChannelRow(channels: List<ChannelItem>, title: String?, onChannel: (String) 
                     Modifier
                         .width(84.dp)
                         .clip(MaterialTheme.shapes.medium)
-                        .clickable { onChannel(c.id) }
+                        .bounceClick(pressedScale = 0.9f) { onChannel(c.id) }
                         .padding(vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
@@ -231,7 +230,7 @@ fun ShortsRow(title: String, items: List<VideoItem>, onClick: (Int) -> Unit) {
                         .aspectRatio(9f / 16f)
                         .clip(MaterialTheme.shapes.large)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable { onClick(index) },
+                        .bounceClick(pressedScale = 0.95f) { onClick(index) },
                 ) {
                     AsyncImage(
                         model = v.thumbnail,
