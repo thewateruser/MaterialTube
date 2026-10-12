@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+- Every build is now signed with the same key, so new versions install as updates
+  (uninstall once more when coming from 0.3.0 or older).
+
 ## 0.3.0
 - **Shorts**: Shorts appear as a horizontal row in feeds and search; home gets a Shorts row
   when YouTube's feed has none. Tap one for a full-screen, swipeable Shorts player

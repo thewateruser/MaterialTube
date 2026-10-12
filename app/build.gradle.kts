@@ -14,6 +14,14 @@ val signing = Properties().apply {
     env("MATERIALTUBE_KEY_ALIAS", "keyAlias")
     env("MATERIALTUBE_KEY_PASSWORD", "keyPassword")
 }
+// Default: the project's own fixed key (signing/materialtube.jks), so every build -- local or CI --
+// has the same signature and updates install over each other. Override with your own key above.
+if (signing.getProperty("storeFile").isNullOrBlank()) {
+    signing["storeFile"] = rootProject.file("signing/materialtube.jks").path
+    signing["storePassword"] = "materialtube"
+    signing["keyAlias"] = "materialtube"
+    signing["keyPassword"] = "materialtube"
+}
 val hasReleaseKey = signing.getProperty("storeFile")?.takeIf { it.isNotBlank() }?.let { file(it).isFile } == true
 
 android {
@@ -24,8 +32,8 @@ android {
         applicationId = "dev.materialtube"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.3.1"
     }
 
     signingConfigs {
@@ -42,6 +50,7 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
+            if (hasReleaseKey) signingConfig = signingConfigs.getByName("release")
         }
         release {
             isMinifyEnabled = true

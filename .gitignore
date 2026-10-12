@@ -8,5 +8,6 @@ build/
 .externalNativeBuild
 .cxx
 *.jks
+!signing/materialtube.jks
 *.keystore
 keystore.properties

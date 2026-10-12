@@ -83,4 +83,4 @@ jobs:
 
             `MaterialTube-debug.apk` is a debug build (larger, installs alongside as a separate app).
 
-            Note: until a release keystore is configured (see README), each build is signed with a different key. Uninstall the previous version before installing a new one.
+            Updates install over the previous version (fixed signing key since 0.3.1). Coming from 0.3.0 or older, uninstall once first.

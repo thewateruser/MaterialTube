@@ -94,15 +94,15 @@ tag is pushed, or when a commit message contains `[release]`.
 
 ### Signing (so updates install over each other)
 
-Without a key, release builds are signed with the CI runner's throwaway debug key, so each CI
-build has a different signature and you'd have to uninstall before updating. To sign every build
-with your own key, add these repository secrets:
+All builds (local and CI) are signed with the project's fixed key in `signing/materialtube.jks`, so
+every release installs as an update over the previous one. The key is public in this repo, which is
+fine for personal use. To sign with your own private key instead, add these repository secrets
+(or a local `keystore.properties` with `storeFile`, `storePassword`, `keyAlias`, `keyPassword`):
 
 - `MATERIALTUBE_KEYSTORE_BASE64`: `base64 -w0 release.jks`
 - `MATERIALTUBE_KEYSTORE_PASSWORD`, `MATERIALTUBE_KEY_ALIAS`, `MATERIALTUBE_KEY_PASSWORD`
 
-Locally, create `keystore.properties` with `storeFile`, `storePassword`, `keyAlias` and
-`keyPassword`.
+Switching keys means uninstalling once.
 
 ## Project layout
 
