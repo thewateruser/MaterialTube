@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -51,6 +52,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import dev.materialtube.Graph
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import dev.materialtube.data.VideoItem
 import dev.materialtube.data.sponsorblock.SponsorBlock
 
@@ -180,6 +184,26 @@ fun SettingsScreen(onSignIn: () -> Unit) {
                 supportingContent = { Text("You can also revoke access at myaccount.google.com → Security → Third-party connections") },
                 leadingContent = { Icon(Icons.AutoMirrored.Filled.Logout, null) },
                 modifier = Modifier.bounceClick(pressedScale = 0.97f) { Graph.signOut() },
+            )
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
+            var copying by remember { mutableStateOf(false) }
+            ListItem(
+                headlineContent = { Text(if (copying) "Collecting…" else "Copy diagnostics") },
+                supportingContent = { Text("Copies what YouTube returns for your subscriptions, to paste into a bug report") },
+                leadingContent = { Icon(Icons.Filled.BugReport, null) },
+                modifier = Modifier.bounceClick(enabled = !copying, pressedScale = 0.97f) {
+                    copying = true
+                    scope.launch {
+                        val report = withContext(Dispatchers.IO) {
+                            runCatching { Graph.api.subscriptionsDiagnostics() }.getOrElse { "failed: ${it.message}" }
+                        }
+                        val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MaterialTube diagnostics", report))
+                        android.widget.Toast.makeText(context, "Copied diagnostics", android.widget.Toast.LENGTH_SHORT).show()
+                        copying = false
+                    }
+                },
             )
         } else {
             ListItem(

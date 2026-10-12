@@ -97,9 +97,13 @@ object Parser {
                 )
             }
         }
-        // TV subscriptions sidebar: one tab per channel, and TV search channel lockups.
+        // TV subscriptions sidebar: one tab per channel, and TV search channel lockups. Only the
+        // tab's own fields count: its "content" holds videos whose channel links would otherwise
+        // make tabs like "All" look like a channel.
         for (key in listOf("tabRenderer", "avatarLockupRenderer")) {
-            node.obj(key)?.let { c ->
+            node.obj(key)?.let { full ->
+                val c = JSONObject()
+                full.keys().forEach { k -> if (k != "content") c.put(k, full.opt(k)) }
                 val id = findFirst(c) { it.obj("browseEndpoint")?.str("browseId")?.startsWith("UC") == true }
                     ?.obj("browseEndpoint")?.str("browseId") ?: return null
                 val title = text(c.opt("title")) ?: findFirst(c) { it.has("title") }?.let { text(it.opt("title")) } ?: return null
@@ -110,6 +114,12 @@ object Parser {
                 }
                 return ChannelItem(id, title, avatar, text(c.opt("subtitle")))
             }
+        }
+        // Web sidebar ("guide") subscription entries.
+        node.obj("guideEntryRenderer")?.let { g ->
+            val id = g.obj("navigationEndpoint", "browseEndpoint")?.str("browseId")?.takeIf { it.startsWith("UC") } ?: return null
+            val title = text(g.opt("formattedTitle")) ?: text(g.opt("title")) ?: return null
+            return ChannelItem(id, title, bestThumb(g.obj("thumbnail")))
         }
         return null
     }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2
+- **Fullscreen** really stays in landscape now. The player echoed the fullscreen state back as
+  a button press, which the app treated as a toggle and flipped straight back to portrait.
+- **Your channels**: the "All" tab is no longer shown as a channel; subscribed channels are
+  loaded from the TV page, the TV/web channel lists or the web sidebar, whichever has them.
+- Settings → Copy diagnostics, for reporting subscription problems.
+
 ## 0.4.1
 - **Fullscreen**: the button now simply locks landscape and stays there until you press it
   again, drag down or go back. Turning the phone no longer changes anything.

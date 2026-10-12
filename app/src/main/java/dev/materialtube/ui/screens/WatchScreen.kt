@@ -280,7 +280,7 @@ fun VideoPlayer(
     modifier: Modifier,
     fullscreen: Boolean,
     showControls: Boolean,
-    onToggleFullscreen: () -> Unit,
+    onFullscreen: (Boolean) -> Unit,
 ) {
     val error by PlayerController.error.collectAsState()
     val loading by PlayerController.loading.collectAsState()
@@ -292,7 +292,9 @@ fun VideoPlayer(
                     setShowNextButton(false)
                     setShowPreviousButton(false)
                     keepScreenOn = true
-                    setFullscreenButtonClickListener { onToggleFullscreen() }
+                    // The player reports the state it wants (it also calls this when we set the
+                    // button state), so pass it on as-is rather than toggling.
+                    setFullscreenButtonClickListener { wantFullscreen -> onFullscreen(wantFullscreen) }
                 }
             },
             update = {
@@ -322,7 +324,7 @@ fun WatchScreen(
     hint: VideoItem?,
     fullscreen: Boolean,
     inPip: Boolean,
-    onToggleFullscreen: () -> Unit,
+    onFullscreen: (Boolean) -> Unit,
     onVideo: (VideoItem) -> Unit,
     onChannel: (String) -> Unit,
     onMinimize: () -> Unit,
@@ -347,7 +349,7 @@ fun WatchScreen(
             scope.launch {
                 if (dragY.value > threshold) {
                     if (fullscreen) {
-                        onToggleFullscreen()
+                        onFullscreen(false)
                         dragY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
                     } else {
                         dragY.animateTo(screenHeight * 0.6f, tween(160))
@@ -373,7 +375,7 @@ fun WatchScreen(
                 .then(if (inPip) Modifier else dragToMinimize),
             fullscreen = true,
             showControls = !inPip,
-            onToggleFullscreen = onToggleFullscreen,
+            onFullscreen = onFullscreen,
         )
         return
     }
@@ -396,7 +398,7 @@ fun WatchScreen(
             Modifier.fillMaxWidth().aspectRatio(16f / 9f).then(dragToMinimize),
             fullscreen = false,
             showControls = true,
-            onToggleFullscreen = onToggleFullscreen,
+            onFullscreen = onFullscreen,
         )
         val np = nowPlaying
         val next = vm.next

@@ -85,10 +85,88 @@ class InnerTube(
 
     fun subscriptions(): FeedPage {
         val page = browse("FEsubscriptions")
-        if (page.channels.isNotEmpty()) return page
-        val channels = runCatching { Parser.channels(call("browse", JSONObject().put("browseId", "FEchannels"))) }
-            .getOrDefault(emptyList())
-        return page.copy(channels = channels)
+        return page.copy(channels = subscribedChannels(page.channels))
+    }
+
+    /**
+     * The channels you're subscribed to. The TV subscriptions page doesn't always list them, so
+     * try, in order: that page, the TV and web channel lists, and the web sidebar.
+     */
+    fun subscribedChannels(fromFeed: List<dev.materialtube.data.ChannelItem> = emptyList()): List<dev.materialtube.data.ChannelItem> {
+        if (fromFeed.size >= 2) return fromFeed
+        val sources: List<() -> List<dev.materialtube.data.ChannelItem>> = listOf(
+            { Parser.channels(call("browse", JSONObject().put("browseId", "FEchannels"))) },
+            { Parser.channels(call("browse", JSONObject().put("browseId", "FEchannels"), WEB)) },
+            { Parser.channels(call("guide", JSONObject(), WEB)) },
+        )
+        for (source in sources) {
+            val channels = runCatching(source).getOrDefault(emptyList())
+            if (channels.size >= 2) return channels
+        }
+        return fromFeed
+    }
+
+    /** Plain-text summary of what each subscriptions source returns, for bug reports. */
+    fun subscriptionsDiagnostics(): String = buildString {
+        fun section(name: String, fetch: () -> JSONObject) {
+            append("== ").append(name).append('\n')
+            val root = try {
+                fetch()
+            } catch (e: Exception) {
+                append("error: ").append(e.message).append("\n\n")
+                return
+            }
+            val channels = Parser.channels(root)
+            append("channels: ").append(channels.size).append(' ')
+                .append(channels.take(5).map { "${it.title}(${it.id.take(6)})" }).append('\n')
+            val counts = sortedMapOf<String, Int>()
+            fun countKeys(node: Any?) {
+                when (node) {
+                    is JSONObject -> node.keys().forEach { k ->
+                        if (k.endsWith("Renderer") || k.endsWith("ViewModel")) counts[k] = (counts[k] ?: 0) + 1
+                        countKeys(node.opt(k))
+                    }
+                    is org.json.JSONArray -> for (i in 0 until node.length()) countKeys(node.opt(i))
+                }
+            }
+            countKeys(root)
+            append("renderers: ").append(counts).append('\n')
+            val tabs = mutableListOf<String>()
+            fun tabsIn(node: Any?) {
+                when (node) {
+                    is JSONObject -> node.keys().forEach { k ->
+                        val v = node.opt(k)
+                        if (k == "tabRenderer" && v is JSONObject) {
+                            val keys = v.keys().asSequence().filter { it != "content" }.toList()
+                            val ids = mutableListOf<String>()
+                            fun ids(n: Any?) {
+                                when (n) {
+                                    is JSONObject -> n.keys().forEach { kk ->
+                                        if (kk != "content") {
+                                            if (kk == "browseId") ids += n.optString(kk)
+                                            ids(n.opt(kk))
+                                        }
+                                    }
+                                    is org.json.JSONArray -> for (i in 0 until n.length()) ids(n.opt(i))
+                                }
+                            }
+                            ids(v)
+                            tabs += "${text(v.opt("title"))} keys=$keys ids=$ids"
+                        }
+                        tabsIn(v)
+                    }
+                    is org.json.JSONArray -> for (i in 0 until node.length()) tabsIn(node.opt(i))
+                }
+            }
+            tabsIn(root)
+            if (tabs.isNotEmpty()) append("tabs:\n").append(tabs.take(15).joinToString("\n") { "  $it" }).append('\n')
+            append('\n')
+        }
+        append("signed in: ").append(auth?.isSignedIn == true).append("\n\n")
+        section("TV FEsubscriptions") { call("browse", JSONObject().put("browseId", "FEsubscriptions")) }
+        section("TV FEchannels") { call("browse", JSONObject().put("browseId", "FEchannels")) }
+        section("WEB FEchannels") { call("browse", JSONObject().put("browseId", "FEchannels"), WEB) }
+        section("WEB guide") { call("guide", JSONObject(), WEB) }
     }
 
     fun history(): FeedPage = browse("FEhistory")

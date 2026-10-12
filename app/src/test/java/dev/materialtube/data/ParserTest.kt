@@ -151,4 +151,41 @@ class ParserTest {
         val ids = mixed.shelves.filter { it.title == "Shorts" }.flatMap { it.items.map { s -> s.id } }
         assertEquals(ids.size, ids.toSet().size) // no repeats
     }
+
+    @Test
+    fun subscriptionTabsAreChannelsButAllIsNot() {
+        val json = JSONObject(
+            """
+            {"contents":{"tvBrowseRenderer":{"content":{"tvSecondaryNavRenderer":{"sections":[{"tvSecondaryNavSectionRenderer":{"tabs":[
+              {"tabRenderer":{"title":"All","endpoint":{"browseEndpoint":{"browseId":"FEsubscriptions"}},
+                "content":{"tvSurfaceContentRenderer":{"content":{"gridRenderer":{"items":[
+                  {"tileRenderer":{"contentId":"vid00000001","contentType":"TILE_CONTENT_TYPE_VIDEO",
+                    "onSelectCommand":{"watchEndpoint":{"videoId":"vid00000001"}},
+                    "metadata":{"tileMetadataRenderer":{"title":{"simpleText":"A video"}}},
+                    "menu":{"browseEndpoint":{"browseId":"UCvideochannel0000000000"}}}}]}}}}}},
+              {"tabRenderer":{"title":"Bog","endpoint":{"browseEndpoint":{"browseId":"UCbog000000000000000000"}},
+                "thumbnail":{"thumbnails":[{"url":"https://yt3/bog=s88-c","width":88,"height":88}]}}}
+            ]}}]}}}}}
+            """,
+        )
+        val channels = Parser.channels(json)
+        assertEquals(listOf("UCbog000000000000000000"), channels.map { it.id })
+        assertEquals("Bog", channels[0].title)
+    }
+
+    @Test
+    fun parsesWebGuideSubscriptions() {
+        val json = JSONObject(
+            """
+            {"items":[{"guideSubscriptionsSectionRenderer":{"items":[
+              {"guideEntryRenderer":{"formattedTitle":{"simpleText":"Bog"},
+                "navigationEndpoint":{"browseEndpoint":{"browseId":"UCbog000000000000000000"}},
+                "thumbnail":{"thumbnails":[{"url":"https://yt3/bog","width":88,"height":88}]}}},
+              {"guideEntryRenderer":{"formattedTitle":{"simpleText":"History"},
+                "navigationEndpoint":{"browseEndpoint":{"browseId":"FEhistory"}}}}
+            ]}}]}
+            """,
+        )
+        assertEquals(listOf("Bog"), Parser.channels(json).map { it.title })
+    }
 }

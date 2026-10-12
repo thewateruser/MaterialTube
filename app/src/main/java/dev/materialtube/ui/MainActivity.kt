@@ -206,6 +206,7 @@ class MainActivity : ComponentActivity() {
     private var fullscreenOn by mutableStateOf(false)
 
     private fun setFullscreen(on: Boolean) {
+        if (on == fullscreenOn && requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED) return
         fullscreenOn = on
         requestedOrientation = if (on) {
             ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
@@ -261,7 +262,6 @@ class MainActivity : ComponentActivity() {
             ShortsQueue.items = list
             nav.navigate("shorts/$index")
         }
-        val toggleFullscreen = { setFullscreen(!fullscreenOn) }
         val showChrome = !onWatch && !inPip && route != "signin" && route?.startsWith("shorts") != true
 
         val miniVisible = !onWatch && !inPip && route != "signin" && route?.startsWith("shorts") != true
@@ -380,7 +380,7 @@ class MainActivity : ComponentActivity() {
                         hint = Hints.get(id),
                         fullscreen = fullscreen,
                         inPip = inPip,
-                        onToggleFullscreen = toggleFullscreen,
+                        onFullscreen = { setFullscreen(it) },
                         onVideo = openVideo,
                         onChannel = openChannel,
                         onMinimize = { nav.popBackStack() },
