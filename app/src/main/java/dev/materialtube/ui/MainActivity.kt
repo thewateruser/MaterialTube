@@ -34,8 +34,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.navigation.NavBackStackEntry
-import android.provider.Settings
-import android.view.OrientationEventListener
 import dev.materialtube.ui.components.pressBounce
 import kotlin.math.roundToInt
 import android.app.PictureInPictureParams
@@ -144,6 +142,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        setFullscreen(false)
         pendingVideo = videoIdFrom(intent)
 
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -195,46 +194,23 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        orientationListener.disable()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onDestroy()
     }
 
     /**
-     * Orientation: the fullscreen button locks landscape/portrait; the lock is released (back to
-     * following the sensor) as soon as the phone is physically held that way. Without the
-     * release, a "portrait" lock left over from exiting fullscreen kept snapping the app back to
-     * portrait when you rotated the phone.
+     * Fullscreen is an explicit switch, not a guess from the sensor: the button (or drag/back)
+     * turns it on or off, and the screen is locked to landscape or portrait to match. Turning
+     * the phone never changes it.
      */
-    private var releaseWhen: Int? = null
-    private val orientationListener by lazy {
-        object : OrientationEventListener(this) {
-            override fun onOrientationChanged(degrees: Int) {
-                val target = releaseWhen ?: return
-                if (degrees == ORIENTATION_UNKNOWN) return
-                val portrait = degrees <= 25 || degrees >= 335 || degrees in 155..205
-                val landscape = degrees in 65..115 || degrees in 245..295
-                val autoRotate = Settings.System.getInt(contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) == 1
-                val reached = (target == Configuration.ORIENTATION_PORTRAIT && portrait) ||
-                    (target == Configuration.ORIENTATION_LANDSCAPE && landscape && autoRotate)
-                if (reached) {
-                    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                    releaseWhen = null
-                    disable()
-                }
-            }
-        }
-    }
+    private var fullscreenOn by mutableStateOf(false)
 
-    private fun lockOrientation(landscape: Boolean) {
-        requestedOrientation = if (landscape) {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    private fun setFullscreen(on: Boolean) {
+        fullscreenOn = on
+        requestedOrientation = if (on) {
+            ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
         } else {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        }
-        releaseWhen = if (landscape) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
-        if (orientationListener.canDetectOrientation()) orientationListener.enable() else {
-            if (!landscape) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
 
@@ -257,13 +233,12 @@ class MainActivity : ComponentActivity() {
         val route = entry?.destination?.route
         currentRoute = route
         val onWatch = route?.startsWith("watch") == true
-        val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-        val fullscreen = onWatch && landscape
+        val fullscreen = onWatch && fullscreenOn
 
         LaunchedEffect(fullscreen) { setSystemBarsHidden(fullscreen) }
         LaunchedEffect(onWatch) {
-            // Leaving the player while it was locked to landscape: go back to portrait.
-            if (!onWatch && requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) lockOrientation(false)
+            // Leaving the player always leaves fullscreen.
+            if (!onWatch && fullscreenOn) setFullscreen(false)
         }
         LaunchedEffect(pendingVideo) {
             pendingVideo?.let { id ->
@@ -271,7 +246,7 @@ class MainActivity : ComponentActivity() {
                 nav.navigate("watch/$id") { launchSingleTop = true }
             }
         }
-        BackHandler(enabled = fullscreen) { lockOrientation(false) }
+        BackHandler(enabled = fullscreen) { setFullscreen(false) }
 
         val openVideo: (VideoItem) -> Unit = { v ->
             Hints.put(v)
@@ -286,7 +261,7 @@ class MainActivity : ComponentActivity() {
             ShortsQueue.items = list
             nav.navigate("shorts/$index")
         }
-        val toggleFullscreen = { lockOrientation(!landscape) }
+        val toggleFullscreen = { setFullscreen(!fullscreenOn) }
         val showChrome = !onWatch && !inPip && route != "signin" && route?.startsWith("shorts") != true
 
         val miniVisible = !onWatch && !inPip && route != "signin" && route?.startsWith("shorts") != true
@@ -338,6 +313,7 @@ class MainActivity : ComponentActivity() {
                         FeedList(
                             vm, openVideo, openChannel,
                             onShorts = openShorts,
+                            showChannels = false,
                             emptyText = if (signedIn) "No recommendations yet. Watch a few videos and pull to refresh." else "Sign in (Library → Sign in) to get your personalized recommendations.",
                         )
                     }

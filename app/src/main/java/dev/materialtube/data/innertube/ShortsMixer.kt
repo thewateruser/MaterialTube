@@ -15,7 +15,10 @@ class ShortsMixer(
     private val videosPerRow: Int = 8,
     private val rowSize: Int = 10,
 ) {
-    private val queries = listOf("shorts", "trending shorts", "funny shorts", "shorts for you")
+    private val queries = listOf(
+        "shorts", "trending shorts", "funny shorts", "shorts for you", "viral shorts", "gaming shorts",
+        "music shorts", "food shorts", "sports shorts", "satisfying shorts", "animals shorts", "tech shorts",
+    )
     private val pool = ArrayDeque<VideoItem>()
     private val used = HashSet<String>()
     private var queryIndex = 0

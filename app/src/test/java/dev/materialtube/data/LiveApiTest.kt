@@ -108,4 +108,20 @@ class LiveApiTest {
         println("shorts shelf: ${shelf?.items?.size} first=${shelf?.items?.firstOrNull()}")
         assertTrue(shelf != null && shelf.items.isNotEmpty())
     }
+
+    @Test
+    fun shortsMixedThroughLongFeed() {
+        val mixer = dev.materialtube.data.innertube.ShortsMixer(
+            search = { api.shortsSearch(it) },
+            more = { api.shortsSearchMore(it) },
+        )
+        fun fakePage(n: Int) = FeedPage(
+            (0 until 4).map { s -> Shelf("Shelf $s", (0 until 12).map { VideoItem(id = "v$n-$s-$it", title = "Video") }) },
+            "next",
+        )
+        val pages = (0 until 4).map { mixer.mix(fakePage(it)) }
+        val rows = pages.map { p -> p.shelves.count { s -> s.items.isNotEmpty() && s.items.all { it.isShort } } }
+        println("shorts rows per page: $rows")
+        assertTrue(rows.all { it >= 3 })
+    }
 }

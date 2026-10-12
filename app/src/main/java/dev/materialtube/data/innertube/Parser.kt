@@ -98,13 +98,10 @@ object Parser {
             }
         }
         // TV subscriptions sidebar: one tab per channel, and TV search channel lockups.
-        for (key in listOf("tabRenderer")) {
+        for (key in listOf("tabRenderer", "avatarLockupRenderer")) {
             node.obj(key)?.let { c ->
-                val endpoint = findFirst(c) { it.obj("browseEndpoint")?.str("browseId")?.startsWith("UC") == true }
-                    ?.obj("browseEndpoint") ?: return null
-                // A tab with params is a section of one channel (Videos, Shorts...), not a channel.
-                if (endpoint.str("params") != null) return null
-                val id = endpoint.str("browseId") ?: return null
+                val id = findFirst(c) { it.obj("browseEndpoint")?.str("browseId")?.startsWith("UC") == true }
+                    ?.obj("browseEndpoint")?.str("browseId") ?: return null
                 val title = text(c.opt("title")) ?: findFirst(c) { it.has("title") }?.let { text(it.opt("title")) } ?: return null
                 var avatar: String? = null
                 walk(c) { n ->

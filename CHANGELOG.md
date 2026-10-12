@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+- **Fullscreen**: the button now simply locks landscape and stays there until you press it
+  again, drag down or go back. Turning the phone no longer changes anything.
+- **Shorts on home**: Shorts rows show up again (every ~8 videos), with fallback sources when
+  the signed-in search returns none.
+- **Subscriptions**: the "Your channels" list works again.
+
 ## 0.4.0
 - **Mini player**: keep watching in a floating player while you browse. Drag it anywhere,
   tap to reopen, play/pause or close it.

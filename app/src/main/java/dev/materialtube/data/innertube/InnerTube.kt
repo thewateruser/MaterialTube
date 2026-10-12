@@ -40,7 +40,33 @@ class InnerTube(
     }
 
     /** Subscription uploads plus the list of subscribed channels (for the channel row). */
-    private val homeShorts = ShortsMixer(search = { search(it) }, more = { searchContinuation(it) })
+    private val homeShorts = ShortsMixer(search = { shortsSearch(it) }, more = { shortsSearchMore(it) })
+
+    /**
+     * Search used to find Shorts. The signed-in TV search doesn't always mark results as Shorts,
+     * so fall back to the signed-out TV and web searches; the continuation token remembers which
+     * one answered.
+     */
+    fun shortsSearch(query: String): FeedPage {
+        val sources = listOf(TV to true, TV to false, WEB to false)
+        for ((index, source) in sources.withIndex()) {
+            val (client, withAuth) = source
+            if (withAuth && auth?.isSignedIn != true) continue
+            val page = runCatching { Parser.feed(call("search", JSONObject().put("query", query), client, withAuth)) }
+                .getOrNull() ?: continue
+            if (page.shelves.sumOf { s -> s.items.count { it.isShort } } >= 3) {
+                return page.copy(continuation = page.continuation?.let { "$index|$it" })
+            }
+        }
+        return FeedPage(emptyList(), null)
+    }
+
+    fun shortsSearchMore(token: String): FeedPage {
+        val index = token.substringBefore('|').toIntOrNull() ?: return FeedPage(emptyList(), null)
+        val (client, withAuth) = listOf(TV to true, TV to false, WEB to false)[index]
+        val page = Parser.feed(call("search", JSONObject().put("continuation", token.substringAfter('|')), client, withAuth))
+        return page.copy(continuation = page.continuation?.let { "$index|$it" })
+    }
 
     /** Home feed with Shorts rows mixed in regularly (see [ShortsMixer]). */
     fun homeWithShorts(): FeedPage {
@@ -53,7 +79,7 @@ class InnerTube(
 
     /** A single row of Shorts (from the Shorts search), e.g. for testing. */
     fun shortsShelf(): dev.materialtube.data.Shelf? {
-        val items = search("shorts").shelves.flatMap { it.items }.filter { it.isShort }.distinctBy { it.id }
+        val items = shortsSearch("shorts").shelves.flatMap { it.items }.filter { it.isShort }.distinctBy { it.id }
         return if (items.size >= 3) dev.materialtube.data.Shelf("Shorts", items.take(30)) else null
     }
 
