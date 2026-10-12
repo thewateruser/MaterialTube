@@ -82,36 +82,6 @@ fun SearchScreen(
     }
 }
 
-@Composable
-fun ChannelScreen(channelId: String, onVideo: (VideoItem) -> Unit, onChannel: (String) -> Unit) {
-    var title by rememberSaveable { mutableStateOf<String?>(null) }
-    var avatar by rememberSaveable { mutableStateOf<String?>(null) }
-    val vm = rememberFeedViewModel(
-        "channel:$channelId",
-        {
-            val page = Graph.api.channel(channelId)
-            title = page.title
-            avatar = page.avatar
-            page.feed
-        },
-        { Graph.api.continuation(it) },
-    )
-    FeedList(
-        vm, onVideo, onChannel,
-        header = {
-            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(
-                    model = avatar,
-                    contentDescription = null,
-                    modifier = Modifier.size(72.dp).clip(AvatarShape).background(MaterialTheme.colorScheme.primaryContainer),
-                )
-                Spacer(Modifier.size(16.dp))
-                Text(title ?: "", style = MaterialTheme.typography.headlineSmallEmphasized)
-            }
-        },
-    )
-}
-
 /** Generic browse feed used by the Library entries (history, liked, watch later). */
 @Composable
 fun BrowseScreen(browseId: String, title: String, onVideo: (VideoItem) -> Unit, onChannel: (String) -> Unit) {

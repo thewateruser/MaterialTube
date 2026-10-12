@@ -371,7 +371,7 @@ class MainActivity : ComponentActivity() {
                     Sub("Settings", nav) { SettingsScreen(onSignIn = { nav.navigate("signin") }) }
                 }
                 composable("channel/{id}", listOf(navArgument("id") { type = NavType.StringType })) { e ->
-                    Sub("Channel", nav) { ChannelScreen(e.arguments!!.getString("id")!!, openVideo, openChannel) }
+                    Sub("", nav) { ChannelScreen(e.arguments!!.getString("id")!!, openVideo, openChannel, openShorts) }
                 }
                 composable(
                     "browse/{id}/{title}",

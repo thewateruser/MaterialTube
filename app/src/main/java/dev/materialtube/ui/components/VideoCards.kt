@@ -224,40 +224,44 @@ fun ShortsRow(title: String, items: List<VideoItem>, onClick: (Int) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             itemsIndexed(items, key = { _, v -> v.id }) { index, v ->
-                Box(
-                    Modifier
-                        .width(150.dp)
-                        .aspectRatio(9f / 16f)
-                        .clip(MaterialTheme.shapes.large)
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .bounceClick(pressedScale = 0.95f) { onClick(index) },
-                ) {
-                    AsyncImage(
-                        model = v.thumbnail,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color(0xCC000000))),
-                    )
-                    Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
-                        Text(
-                            v.title,
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelLarge,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        v.meta?.let {
-                            Text(it, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                        }
-                    }
-                }
+                ShortCard(v, Modifier.width(172.dp)) { onClick(index) }
             }
         }
-        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** A 9:16 Shorts thumbnail card with the title over a gradient. */
+@Composable
+fun ShortCard(v: VideoItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier
+            .aspectRatio(9f / 16f)
+            .clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .bounceClick(pressedScale = 0.95f, onClick = onClick),
+    ) {
+        AsyncImage(
+            model = v.thumbnail,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color(0xCC000000))),
+        )
+        Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
+            Text(
+                v.title,
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            v.meta?.let {
+                Text(it, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            }
+        }
     }
 }

@@ -78,4 +78,14 @@ data class ChannelPage(
     val avatar: String?,
     val subscribed: Boolean?,
     val feed: FeedPage,
+    val banner: String? = null,
+    /** e.g. "@MrBeast • 400M subscribers • 900 videos" */
+    val subtitle: String? = null,
 )
+
+enum class ChannelTab(val label: String, val params: String?) {
+    Home("Home", null),
+    Videos("Videos", "EgZ2aWRlb3PyBgQKAjoA"),
+    Shorts("Shorts", "EgZzaG9ydHPyBgUKA5oBAA%3D%3D"),
+    Live("Live", "EgdzdHJlYW1z8gYECgJ6AA%3D%3D"),
+}

@@ -77,6 +77,29 @@ class InnerTube(
     fun channel(channelId: String): ChannelPage =
         Parser.channel(call("browse", JSONObject().put("browseId", channelId)))
 
+    /**
+     * A channel tab (Videos / Shorts / Live). The TV app has no tabs, so this uses the standard
+     * tab params, first as the TV client and then as the web client if TV returns nothing.
+     */
+    fun channelTab(channelId: String, tab: dev.materialtube.data.ChannelTab): FeedPage {
+        val params = tab.params ?: return channel(channelId).feed
+        val body = { JSONObject().put("browseId", channelId).put("params", java.net.URLDecoder.decode(params, "UTF-8")) }
+        val tv = runCatching { Parser.feed(call("browse", body())) }.getOrNull()
+        if (tv != null && tv.shelves.any { it.items.isNotEmpty() }) return tv.withShortsFlag(tab)
+        return Parser.feed(call("browse", body(), WEB, withAuth = false)).withShortsFlag(tab)
+    }
+
+    fun channelTabContinuation(token: String, web: Boolean): FeedPage =
+        if (web) Parser.feed(call("browse", JSONObject().put("continuation", token), WEB, withAuth = false))
+        else continuation(token)
+
+    private fun FeedPage.withShortsFlag(tab: dev.materialtube.data.ChannelTab) =
+        if (tab == dev.materialtube.data.ChannelTab.Shorts) {
+            copy(shelves = shelves.map { s -> s.copy(items = s.items.map { it.copy(isShort = true) }) })
+        } else {
+            this
+        }
+
     /** Next page of any feed returned by this client. */
     fun continuation(token: String, endpoint: String = "browse"): FeedPage =
         Parser.feed(call(endpoint, JSONObject().put("continuation", token)))

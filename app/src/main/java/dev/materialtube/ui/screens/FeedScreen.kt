@@ -1,8 +1,12 @@
 package dev.materialtube.ui.screens
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -38,6 +42,7 @@ import dev.materialtube.ui.components.CenteredLoading
 import dev.materialtube.ui.components.ErrorState
 import dev.materialtube.ui.components.ChannelRow
 import dev.materialtube.ui.components.SectionTitle
+import dev.materialtube.ui.components.ShortCard
 import dev.materialtube.ui.components.ShortsRow
 import dev.materialtube.ui.components.VideoCard
 import kotlinx.coroutines.CancellationException
@@ -129,10 +134,14 @@ fun FeedList(
     emptyText: String = "Nothing here yet",
     header: (@Composable () -> Unit)? = null,
     state: LazyListState = rememberLazyListState(),
+    showChannels: Boolean = true,
+    /** Lay Shorts out as a 3-column grid instead of horizontal rows (a channel's Shorts tab). */
+    shortsGrid: Boolean = false,
 ) {
     when {
-        vm.loading && vm.shelves.isEmpty() -> CenteredLoading(modifier)
-        vm.error != null && vm.shelves.isEmpty() -> ErrorState(vm.error!!, { vm.load() }, modifier)
+        // With a header (channel page), loading/errors show below it so the header and tabs stay put.
+        header == null && vm.loading && vm.shelves.isEmpty() -> CenteredLoading(modifier)
+        header == null && vm.error != null && vm.shelves.isEmpty() -> ErrorState(vm.error!!, { vm.load() }, modifier)
         else -> {
             val pullState = rememberPullToRefreshState()
             PullToRefreshBox(
@@ -160,7 +169,11 @@ fun FeedList(
             }
             LazyColumn(state = state, modifier = Modifier.fillMaxSize()) {
                 header?.let { h -> item { h() } }
-                if (vm.shelves.isEmpty()) {
+                if (vm.loading && vm.shelves.isEmpty()) {
+                    item { CenteredLoading(Modifier.height(280.dp)) }
+                } else if (vm.error != null && vm.shelves.isEmpty()) {
+                    item { ErrorState(vm.error!!, { vm.load() }, Modifier.height(280.dp)) }
+                } else if (vm.shelves.isEmpty()) {
                     item {
                         Text(
                             emptyText,
@@ -169,7 +182,7 @@ fun FeedList(
                         )
                     }
                 }
-                if (vm.channels.isNotEmpty()) {
+                if (showChannels && vm.channels.isNotEmpty()) {
                     item(key = "channels") {
                         ChannelRow(vm.channels, channelsTitle, onChannel)
                     }
@@ -185,7 +198,23 @@ fun FeedList(
                             VideoCard(v, onClick = { onVideo(v) }, onChannel = onChannel)
                         }
                     }
-                    if (shorts.isNotEmpty()) {
+                    if (shorts.isNotEmpty() && shortsGrid) {
+                        val all = vm.shelves.flatMap { s -> s.items.filter { it.isShort } }
+                        val offset = vm.shelves.take(i).sumOf { s -> s.items.count { it.isShort } }
+                        items(shorts.chunked(3), key = { "g$i-${it.first().id}" }) { row ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                row.forEach { v ->
+                                    ShortCard(v, Modifier.weight(1f)) {
+                                        onShorts(all, offset + shorts.indexOf(v))
+                                    }
+                                }
+                                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    } else if (shorts.isNotEmpty()) {
                         item(key = "s$i") {
                             ShortsRow(
                                 title = if (videos.isEmpty()) shelf.title ?: "Shorts" else "Shorts",

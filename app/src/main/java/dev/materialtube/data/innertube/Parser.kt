@@ -98,10 +98,13 @@ object Parser {
             }
         }
         // TV subscriptions sidebar: one tab per channel, and TV search channel lockups.
-        for (key in listOf("tabRenderer", "avatarLockupRenderer")) {
+        for (key in listOf("tabRenderer")) {
             node.obj(key)?.let { c ->
-                val id = findFirst(c) { it.obj("browseEndpoint")?.str("browseId")?.startsWith("UC") == true }
-                    ?.obj("browseEndpoint")?.str("browseId") ?: return null
+                val endpoint = findFirst(c) { it.obj("browseEndpoint")?.str("browseId")?.startsWith("UC") == true }
+                    ?.obj("browseEndpoint") ?: return null
+                // A tab with params is a section of one channel (Videos, Shorts...), not a channel.
+                if (endpoint.str("params") != null) return null
+                val id = endpoint.str("browseId") ?: return null
                 val title = text(c.opt("title")) ?: findFirst(c) { it.has("title") }?.let { text(it.opt("title")) } ?: return null
                 var avatar: String? = null
                 walk(c) { n ->
@@ -138,7 +141,7 @@ object Parser {
         text(shelf.opt("title"))
             ?: text(shelf.obj("headerRenderer", "shelfHeaderRenderer")?.opt("title"))
             ?: shelf.obj("header", "gridHeaderRenderer")?.let { text(it.opt("title")) }
-            ?: findFirst(shelf.opt("header")) { it.has("title") }?.let { text(it.opt("title")) }
+            ?: findFirst(shelf.opt("headerRenderer") ?: shelf.opt("header")) { it.has("title") }?.let { text(it.opt("title")) }
 
     /** Continuation token for the outer (vertical) list, ignoring per-row continuations. */
     fun continuation(root: JSONObject): String? {
@@ -301,6 +304,9 @@ object Parser {
     private fun channelIdIn(node: JSONObject): String? =
         findFirst(node) { it.str("browseId")?.startsWith("UC") == true }?.str("browseId")
 
+    /** yt3 avatar URLs carry their size ("=s72-..."); ask for a sharper one. */
+    fun largeAvatar(url: String) = url.replace(Regex("=s\\d+-"), "=s256-")
+
     fun thumbFor(videoId: String) = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
 
     fun player(root: JSONObject): PlayerInfo {
@@ -357,15 +363,23 @@ object Parser {
         val header = root.obj("header")
         val sub = findFirst(root) { it.has("subscribeButtonRenderer") }?.obj("subscribeButtonRenderer")
         val tvHeader = findFirst(root) { it.has("channelHeaderRenderer") }?.obj("channelHeaderRenderer")
+        val subtitle = tvHeader?.opt("subtitle")?.let { sub ->
+            (sub as? JSONObject)?.obj("lineRenderer")?.arr("items")?.objects()
+                ?.mapNotNull { text(it.obj("lineItemRenderer")?.opt("text")) }
+                ?.filter { it != "•" }?.joinToString(" • ")
+                ?: text(sub)
+        }
         return ChannelPage(
+            banner = bestThumb(tvHeader?.obj("backgroundImage")) ?: bestThumb(meta?.obj("banner")),
+            subtitle = subtitle?.takeIf { it.isNotBlank() },
             title = meta?.str("title")
                 ?: text(tvHeader?.opt("title"))
                 ?: findFirst(tvHeader) { it.has("title") }?.let { text(it.opt("title")) }
                 ?: findFirst(header) { it.has("title") }?.let { text(it.opt("title")) },
-            avatar = bestThumb(meta?.obj("avatar"))
+            avatar = (bestThumb(meta?.obj("avatar"))
                 ?: bestThumb(tvHeader?.obj("avatar"))
                 ?: bestThumb(tvHeader?.obj("thumbnail"))
-                ?: findFirst(header) { it.has("avatar") }?.let { bestThumb(it.obj("avatar")) },
+                ?: findFirst(header) { it.has("avatar") }?.let { bestThumb(it.obj("avatar")) })?.let(::largeAvatar),
             subscribed = sub?.takeIf { it.has("subscribed") }?.optBoolean("subscribed"),
             feed = feed(root),
         )
