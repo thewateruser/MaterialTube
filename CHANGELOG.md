@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+- **Shorts**: Shorts appear as a horizontal row in feeds and search; home gets a Shorts row
+  when YouTube's feed has none. Tap one for a full-screen, swipeable Shorts player
+  (loops, like, comments, share).
+- **Subscriptions**: "Your channels" avatar row above the uploads.
+- **Search**: matching channels are shown above the video results.
+- **Comments**: sort by Top or Newest.
+
 ## 0.2.0
 - Renamed to **MaterialTube** (package `dev.materialtube`; installs as a new app).
 - **Material 3 Expressive** UI: expressive motion, dynamic color, loading indicators,

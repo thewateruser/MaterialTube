@@ -50,20 +50,13 @@ class InnerTube(
         return page.copy(shelves = shelves)
     }
 
-    /** A row of Shorts: the TV Shorts tab (personalized when signed in), then the web Shorts feed. */
+    /**
+     * A row of Shorts for when the home feed has none. YouTube's Shorts tab isn't available to the
+     * TV client, but its (signed-in, so personalised) search returns Shorts lockups.
+     */
     fun shortsShelf(): dev.materialtube.data.Shelf? {
-        val sources: List<() -> JSONObject> = listOf(
-            { call("browse", JSONObject().put("browseId", "FEshorts")) },
-            { call("browse", JSONObject().put("browseId", "FEshorts"), WEB, withAuth = false) },
-        )
-        for (source in sources) {
-            val items = runCatching { Parser.videos(source()) }.getOrNull()
-                ?.map { it.copy(isShort = true) }
-                ?.takeIf { it.size >= 3 }
-                ?: continue
-            return dev.materialtube.data.Shelf("Shorts", items.take(30))
-        }
-        return null
+        val items = search("shorts").shelves.flatMap { it.items }.filter { it.isShort }.distinctBy { it.id }
+        return if (items.size >= 3) dev.materialtube.data.Shelf("Shorts", items.take(30)) else null
     }
 
     fun subscriptions(): FeedPage {
