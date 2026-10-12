@@ -26,6 +26,7 @@ import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.Stream
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamType
+import org.schabi.newpipe.extractor.stream.VideoStream
 import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicLong
 
@@ -96,26 +97,26 @@ object MediaSourceBuilder {
 
         val videoOnly = info.videoOnlyStreams.filter(::usable)
         val audio = info.audioStreams.filter(::usable)
-        val heights = videoOnly.map { it.height }.filter { it > 0 }.distinct().sortedDescending()
+        val heights = videoOnly.map(::quality).filter { it > 0 }.distinct().sortedDescending()
 
         if (audio.isNotEmpty()) {
             val bestAudio = pickAudio(audio)
             val audioSource = dash(bestAudio, info, item.setUri(bestAudio.content).build())
             if (heights.isEmpty()) return BuiltSource(audioSource, null, emptyList())
             val target = heights.firstOrNull { it <= maxHeight } ?: heights.last()
-            val video = videoOnly.filter { it.height == target }.minBy { codecRank(it.codec) }
+            val video = videoOnly.filter { quality(it) == target }.minBy { codecRank(it.codec) }
             val videoSource = dash(video, info, item.setUri(video.content).build())
             return BuiltSource(MergingMediaSource(true, true, videoSource, audioSource), target, heights)
         }
 
         // Fallback: a muxed progressive stream (usually 360p).
         val muxed = info.videoStreams.filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
-            .sortedByDescending { it.height }
-        val pick = muxed.firstOrNull { it.height <= maxHeight } ?: muxed.lastOrNull()
+            .sortedByDescending { quality(it) }
+        val pick = muxed.firstOrNull { quality(it) <= maxHeight } ?: muxed.lastOrNull()
         if (pick != null) {
             return BuiltSource(
                 ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(item.setUri(pick.content).build()),
-                pick.height, emptyList(),
+                quality(pick), emptyList(),
             )
         }
         info.hlsUrl?.takeIf { it.isNotEmpty() }?.let {
@@ -123,6 +124,14 @@ object MediaSourceBuilder {
         }
         throw IllegalStateException("No playable streams found")
     }
+
+    /**
+     * The "1080p"-style quality: the shorter side. Vertical videos (Shorts) report their long
+     * side as the height, so comparing raw heights against the quality limit picked a much
+     * lower resolution for them.
+     */
+    private fun quality(s: VideoStream): Int =
+        if (s.width in 1 until s.height) s.width else s.height
 
     private fun usable(s: Stream): Boolean =
         s.isUrl && s.itagItem != null &&

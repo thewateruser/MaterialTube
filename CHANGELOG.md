@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+- **Faster Shorts**: the next Shorts are resolved in the background while you watch, so swiping
+  starts the next one straight away; playback starts after ~1s of buffer instead of 2.5s.
+- **Sharper Shorts**: vertical videos now get the quality you picked (1080p meant the long side
+  before, so Shorts dropped to ~608p).
+- **Comment sorting** shows Top / Newest immediately; the options load together with the
+  comments, and picking Newest early applies as soon as they're ready.
+- **Community posts**: read comments and replies, and like posts (signed in).
+
 ## 0.5.0
 - **Channel Posts and About**: community posts (text, images, polls, linked videos) and the
   About panel (description, subscriber/video/view counts, join date, country, links).

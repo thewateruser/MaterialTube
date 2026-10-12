@@ -67,4 +67,20 @@ class LiveChannelTest {
         assertNotNull(about.description)
         assertTrue(about.stats.isNotEmpty())
     }
+
+    @Test
+    fun postComments() {
+        val post = api.channelPosts(channelId).posts.first { it.detailBrowseId != null }
+        println("POST detail=${post.detailBrowseId}/${post.detailParams?.take(20)} like=${post.likeAction != null} unlike=${post.unlikeAction != null}")
+        val page = api.postComments(post)
+        println("POST COMMENTS n=${page.comments.size} next=${page.next != null} first=${page.comments.firstOrNull()}")
+        assertTrue(page.comments.isNotEmpty())
+        val withReplies = page.comments.firstOrNull { it.repliesToken != null }
+        if (withReplies != null) {
+            val replies = api.postCommentsMore(withReplies.repliesToken!!)
+            println("POST REPLIES n=${replies.comments.size}")
+            assertTrue(replies.comments.isNotEmpty())
+        }
+        page.next?.let { assertTrue(api.postCommentsMore(it).comments.isNotEmpty()) }
+    }
 }

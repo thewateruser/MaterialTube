@@ -1,5 +1,20 @@
 package dev.materialtube.ui.screens
 
+import android.widget.Toast
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.FilledTonalIconToggleButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.materialtube.data.PostComment
+import dev.materialtube.streams.Comment
+import dev.materialtube.ui.components.pressBounce
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -116,6 +131,106 @@ class PostsViewModel(private val channelId: String) : ViewModel() {
     }
 
     val canLoadMore get() = continuation != null
+
+    /** Like state per post, as toggled here (posts load signed out, so they start unliked). */
+    val liked = mutableStateMapOf<String, Boolean>()
+
+    fun toggleLike(post: Post, onError: (String) -> Unit) {
+        val want = !(liked[post.id] ?: post.liked)
+        liked[post.id] = want
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { Graph.api.likePost(post, want) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                liked[post.id] = !want
+                onError(e.message ?: "Couldn't like the post")
+            }
+        }
+    }
+}
+
+/** Comments (and replies) of one community post. */
+class PostCommentsViewModel(private val post: Post) : ViewModel() {
+    var comments by mutableStateOf<List<Comment>>(emptyList())
+        private set
+    var loading by mutableStateOf(true)
+        private set
+    var error by mutableStateOf<String?>(null)
+        private set
+    private var next: String? = null
+    private var loadingMore = false
+    val replies = mutableStateMapOf<String, List<Comment>>()
+    private val repliesToken = HashMap<String, String?>()
+
+    init { load() }
+
+    fun load() {
+        loading = true
+        error = null
+        viewModelScope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) { Graph.api.postComments(post) }
+                comments = page.comments.map(::toComment)
+                next = page.next
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = e.message ?: "Couldn't load comments"
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    val canLoadMore get() = next != null
+
+    fun loadMore() {
+        val token = next ?: return
+        if (loadingMore) return
+        loadingMore = true
+        viewModelScope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) { Graph.api.postCommentsMore(token) }
+                val seen = comments.map { it.id }.toHashSet()
+                comments = comments + page.comments.map(::toComment).filter { seen.add(it.id) }
+                next = page.next.takeIf { it != token && page.comments.isNotEmpty() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            } finally {
+                loadingMore = false
+            }
+        }
+    }
+
+    fun canLoadReplies(c: Comment) = if (c.id in replies) repliesToken[c.id] != null else repliesToken.containsKey(c.id)
+
+    fun loadReplies(c: Comment) {
+        val token = repliesToken[c.id] ?: return
+        repliesToken[c.id] = null
+        viewModelScope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) { Graph.api.postCommentsMore(token) }
+                replies[c.id] = replies[c.id].orEmpty() + page.comments.map(::toComment)
+                repliesToken[c.id] = page.next
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                repliesToken[c.id] = token
+            }
+        }
+    }
+
+    private fun toComment(p: PostComment): Comment {
+        if (p.repliesToken != null && p.id !in repliesToken) repliesToken[p.id] = p.repliesToken
+        return Comment(
+            id = p.id, author = p.author, avatar = p.avatar, text = p.text, isHtml = false,
+            likes = p.likes, published = p.published, replyCount = p.replyCount, repliesPage = null,
+            pinned = false, hearted = false, byUploader = p.byUploader,
+        )
+    }
 }
 
 class AboutViewModel(private val channelId: String) : ViewModel() {
@@ -164,7 +279,7 @@ fun PostsList(vm: PostsViewModel, header: @Composable () -> Unit, onVideo: (Vide
                 )
             }
             else -> {
-                items(vm.posts, key = { it.id }) { PostCard(it, onVideo) }
+                items(vm.posts, key = { it.id }) { PostCard(it, vm, onVideo) }
                 if (vm.canLoadMore) {
                     item {
                         Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { LoadingIndicator() }
@@ -176,8 +291,12 @@ fun PostsList(vm: PostsViewModel, header: @Composable () -> Unit, onVideo: (Vide
 }
 
 @Composable
-private fun PostCard(post: Post, onVideo: (VideoItem) -> Unit) {
+private fun PostCard(post: Post, vm: PostsViewModel, onVideo: (VideoItem) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    var showComments by remember { mutableStateOf(false) }
+    val signedIn by Graph.signedIn.collectAsState()
+    val context = LocalContext.current
+    val liked = vm.liked[post.id] ?: post.liked
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -255,21 +374,92 @@ private fun PostCard(post: Post, onVideo: (VideoItem) -> Unit) {
                     }
                 }
             }
-            if (post.likes != null || post.comments != null) {
-                Row(
-                    Modifier.padding(horizontal = 14.dp).padding(top = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    post.likes?.let {
-                        Icon(Icons.Outlined.ThumbUp, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(" $it", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(20.dp))
+            Row(
+                Modifier.padding(horizontal = 8.dp).padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (signedIn && post.likeAction != null) {
+                    FilledTonalIconToggleButton(
+                        checked = liked,
+                        onCheckedChange = {
+                            vm.toggleLike(post) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+                        },
+                        shapes = IconButtonDefaults.toggleableShapes(),
+                        modifier = Modifier.pressBounce(0.82f),
+                    ) { Icon(if (liked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp, "Like") }
+                } else {
+                    Icon(
+                        Icons.Outlined.ThumbUp, null,
+                        Modifier.padding(start = 6.dp, end = 4.dp).size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                post.likes?.let {
+                    Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Spacer(Modifier.width(12.dp))
+                if (post.detailBrowseId != null) {
+                    TextButton(onClick = { showComments = true }, modifier = Modifier.pressBounce()) {
+                        Icon(Icons.AutoMirrored.Outlined.Comment, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(post.comments?.let { "$it comments" } ?: "Comments")
                     }
+                } else {
                     post.comments?.let {
                         Icon(Icons.AutoMirrored.Outlined.Comment, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(" $it", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+            }
+        }
+    }
+    if (showComments) PostCommentsSheet(post) { showComments = false }
+}
+
+@Composable
+private fun PostCommentsSheet(post: Post, onDismiss: () -> Unit) {
+    val vm: PostCommentsViewModel = viewModel(key = "post-comments:${post.id}") { PostCommentsViewModel(post) }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Comments", style = MaterialTheme.typography.headlineSmallEmphasized)
+            post.comments?.let {
+                Spacer(Modifier.size(8.dp))
+                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        when {
+            vm.loading && vm.comments.isEmpty() ->
+                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { LoadingIndicator() }
+            vm.error != null && vm.comments.isEmpty() -> ErrorState(vm.error!!, { vm.load() }, Modifier.height(200.dp))
+            vm.comments.isEmpty() -> Text(
+                "No comments yet",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(24.dp),
+            )
+            else -> LazyColumn(Modifier.fillMaxWidth()) {
+                items(vm.comments, key = { it.id }) { c ->
+                    CommentRow(c, isReply = false)
+                    val loaded = vm.replies[c.id]
+                    loaded?.forEach { r -> CommentRow(r, isReply = true) }
+                    if (vm.canLoadReplies(c)) {
+                        TextButton(
+                            onClick = { vm.loadReplies(c) },
+                            modifier = Modifier.padding(start = 60.dp).pressBounce(),
+                        ) {
+                            Text(
+                                if (loaded == null) "${c.replyCount} ${if (c.replyCount == 1) "reply" else "replies"}" else "More replies",
+                            )
+                        }
+                    }
+                }
+                if (vm.canLoadMore) {
+                    item {
+                        LaunchedEffect(vm.comments.size) { vm.loadMore() }
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { LoadingIndicator() }
+                    }
+                }
+                item { Spacer(Modifier.navigationBarsPadding().height(16.dp)) }
             }
         }
     }

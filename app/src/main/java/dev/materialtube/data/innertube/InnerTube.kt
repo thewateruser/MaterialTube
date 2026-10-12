@@ -219,6 +219,27 @@ class InnerTube(
     fun channelPostsContinuation(token: String): dev.materialtube.data.PostsPage =
         Parser.posts(call("browse", JSONObject().put("continuation", token), WEB, withAuth = false))
 
+    /** First page of a community post's comments. */
+    fun postComments(post: dev.materialtube.data.Post): dev.materialtube.data.PostCommentsPage {
+        val browseId = post.detailBrowseId ?: throw InnerTubeException("This post has no comments")
+        val body = JSONObject().put("browseId", browseId)
+        post.detailParams?.let { body.put("params", it) }
+        val page = call("browse", body, WEB, withAuth = false)
+        val token = Parser.postCommentsToken(page) ?: return dev.materialtube.data.PostCommentsPage(emptyList(), null)
+        return postCommentsMore(token)
+    }
+
+    /** More comments, or a comment's replies (both are continuation tokens). */
+    fun postCommentsMore(token: String): dev.materialtube.data.PostCommentsPage =
+        Parser.postComments(call("browse", JSONObject().put("continuation", token), WEB, withAuth = false))
+
+    /** Likes (or removes the like from) a community post. Needs sign-in. */
+    fun likePost(post: dev.materialtube.data.Post, like: Boolean) {
+        val action = (if (like) post.likeAction else post.unlikeAction)
+            ?: throw InnerTubeException("This post can't be liked here")
+        action("comment/perform_comment_action", JSONObject().put("actions", JSONArray().put(action)), WEB)
+    }
+
     /** Description, stats and links from the channel's About panel. */
     fun channelAbout(channelId: String): dev.materialtube.data.ChannelAbout {
         val page = webChannelPage(channelId)
@@ -301,9 +322,9 @@ class InnerTube(
 
     fun unsubscribe(channelId: String) = action("subscription/unsubscribe", JSONObject().put("channelIds", JSONArray().put(channelId)))
 
-    private fun action(endpoint: String, body: JSONObject) {
+    private fun action(endpoint: String, body: JSONObject, client: Client = TV) {
         if (auth?.isSignedIn != true) throw InnerTubeException("Sign in first")
-        call(endpoint, body)
+        call(endpoint, body, client)
     }
 
     fun context(client: Client = TV): JSONObject {

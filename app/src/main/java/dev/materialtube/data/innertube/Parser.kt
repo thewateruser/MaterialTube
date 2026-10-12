@@ -1,5 +1,7 @@
 package dev.materialtube.data.innertube
 
+import dev.materialtube.data.PostCommentsPage
+import dev.materialtube.data.PostComment
 import dev.materialtube.data.ChannelLink
 import dev.materialtube.data.ChannelAbout
 import dev.materialtube.data.PostsPage
@@ -421,6 +423,15 @@ object Parser {
         }
         val poll = attachment?.obj("pollRenderer")?.arr("choices")?.objects()
             ?.mapNotNull { text(it.opt("text")) }.orEmpty()
+        val buttons = p.obj("actionButtons", "commentActionButtonsRenderer")
+        val detail = buttons?.obj("replyButton", "buttonRenderer", "navigationEndpoint", "browseEndpoint")
+            ?: p.obj("navigationEndpoint", "browseEndpoint")
+            ?: findFirst(p.opt("publishedTimeText")) { it.has("browseEndpoint") }?.obj("browseEndpoint")
+        val like = buttons?.obj("likeButton", "toggleButtonRenderer")
+        fun action(endpoint: String) = like?.obj(endpoint)?.let { e ->
+            findFirst(e) { it.has("performCommentActionEndpoint") }?.obj("performCommentActionEndpoint")?.str("action")
+                ?: e.obj("performCommentActionEndpoint")?.str("action")
+        }
         return Post(
             id = id,
             author = text(p.opt("authorText")),
@@ -433,7 +444,101 @@ object Parser {
             images = images,
             video = attachment?.let { videos(it).firstOrNull() },
             poll = poll,
+            detailBrowseId = detail?.str("browseId"),
+            detailParams = detail?.str("params"),
+            likeAction = action("defaultServiceEndpoint"),
+            unlikeAction = action("toggledServiceEndpoint"),
+            liked = like?.optBoolean("isToggled") == true,
         )
+    }
+
+    /** Token that loads the comments section of a post page. */
+    fun postCommentsToken(root: JSONObject): String? {
+        val section = findFirst(root) {
+            it.obj("itemSectionRenderer")?.str("sectionIdentifier") == "comment-item-section" ||
+                it.obj("itemSectionRenderer")?.str("targetId")?.contains("comment") == true
+        }?.obj("itemSectionRenderer")
+        return findFirst(section ?: root) { it.has("continuationCommand") }?.obj("continuationCommand")?.str("token")
+    }
+
+    /**
+     * Comments from a comments continuation response. Handles the current format (comment view
+     * models whose data lives in `frameworkUpdates` entity mutations) and the older
+     * `commentRenderer`.
+     */
+    fun postComments(root: JSONObject): PostCommentsPage {
+        val entities = HashMap<String, JSONObject>()
+        val mutationOrder = mutableListOf<String>()
+        root.obj("frameworkUpdates", "entityBatchUpdate")?.arr("mutations")?.objects()?.forEach { m ->
+            val payload = m.obj("payload", "commentEntityPayload") ?: return@forEach
+            val key = m.str("entityKey") ?: payload.str("key") ?: return@forEach
+            entities[key] = payload
+            mutationOrder += key
+        }
+        val out = LinkedHashMap<String, PostComment>()
+        val items = continuationItems(root)
+        for (item in items) {
+            val thread = item.obj("commentThreadRenderer")
+            val repliesToken = thread?.obj("replies", "commentRepliesRenderer")?.let { r ->
+                findFirst(r) { it.has("continuationCommand") }?.obj("continuationCommand")?.str("token")
+            }
+            val vmKey = (thread?.obj("commentViewModel", "commentViewModel") ?: item.obj("commentViewModel"))?.str("commentKey")
+            val comment = vmKey?.let { entities[it] }?.let { commentEntity(it, repliesToken) }
+                ?: (thread?.obj("comment", "commentRenderer") ?: item.obj("commentRenderer"))?.let { commentRenderer(it, repliesToken) }
+            if (comment != null && comment.id !in out) out[comment.id] = comment
+        }
+        if (out.isEmpty()) {
+            mutationOrder.forEach { k -> commentEntity(entities[k]!!, null)?.let { if (it.id !in out) out[it.id] = it } }
+        }
+        val next = items.lastOrNull()?.obj("continuationItemRenderer")?.let { c ->
+            findFirst(c) { it.has("continuationCommand") }?.obj("continuationCommand")?.str("token")
+        }
+        return PostCommentsPage(out.values.toList(), next)
+    }
+
+    /** Items appended/reloaded by a continuation response (comments and their continuation). */
+    private fun continuationItems(root: JSONObject): List<JSONObject> {
+        val out = mutableListOf<JSONObject>()
+        val actions = (root.arr("onResponseReceivedEndpoints")?.objects().orEmpty() + root.arr("onResponseReceivedActions")?.objects().orEmpty())
+        for (a in actions) {
+            val list = a.obj("appendContinuationItemsAction")?.arr("continuationItems")
+                ?: a.obj("reloadContinuationItemsCommand")?.arr("continuationItems")
+                ?: continue
+            out += list.objects()
+        }
+        return out
+    }
+
+    private fun commentEntity(e: JSONObject, repliesToken: String?): PostComment? {
+        val props = e.obj("properties") ?: return null
+        val author = e.obj("author")
+        val toolbar = e.obj("toolbar")
+        return PostComment(
+            id = props.str("commentId") ?: return null,
+            author = author?.str("displayName").orEmpty(),
+            avatar = author?.str("avatarThumbnailUrl") ?: bestThumb(e.obj("avatar", "image")),
+            text = text(props.opt("content")).orEmpty(),
+            published = props.str("publishedTime"),
+            likes = toolbar?.str("likeCountNotliked")?.trim()?.takeIf { it.isNotEmpty() && it != "0" },
+            replyCount = toolbar?.str("replyCount")?.filter { it.isDigit() }?.toIntOrNull() ?: 0,
+            repliesToken = repliesToken,
+            byUploader = author?.optBoolean("isCreator") == true,
+        )
+    }
+
+    private fun commentRenderer(c: JSONObject, repliesToken: String?): PostComment? {
+        val id = c.str("commentId") ?: return null
+        return PostComment(
+        id = id,
+        author = text(c.opt("authorText")).orEmpty(),
+        avatar = bestThumb(c.obj("authorThumbnail")),
+        text = text(c.opt("contentText")).orEmpty(),
+        published = text(c.opt("publishedTimeText")),
+        likes = text(c.opt("voteCount")),
+        replyCount = c.optInt("replyCount", 0),
+        repliesToken = repliesToken,
+        byUploader = c.optBoolean("authorIsChannelOwner"),
+    )
     }
 
     /** The About panel ("aboutChannelViewModel"), with [fallbackDescription] from the page metadata. */

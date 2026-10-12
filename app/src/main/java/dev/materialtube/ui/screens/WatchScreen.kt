@@ -121,7 +121,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.Page
 
-class WatchViewModel(private val videoId: String) : ViewModel() {
+/**
+ * Watch-page state. [loadCommentsNow] = false (Shorts) defers comments until the sheet opens so
+ * they don't compete with the video for bandwidth.
+ */
+class WatchViewModel(private val videoId: String, loadCommentsNow: Boolean = true) : ViewModel() {
     var next by mutableStateOf<NextInfo?>(null)
         private set
     var loading by mutableStateOf(true)
@@ -154,32 +158,62 @@ class WatchViewModel(private val videoId: String) : ViewModel() {
     var selectedSort by mutableStateOf(0)
         private set
     private var sortsRequested = false
+    private var commentsRequested = false
+
+    private var sortsLoaded = false
 
     fun loadSorts() {
         if (sortsRequested) return
         sortsRequested = true
         viewModelScope.launch {
             sorts = runCatching { withContext(Dispatchers.IO) { Graph.api.commentSorts(videoId) } }.getOrDefault(emptyList())
+            sortsLoaded = true
+            pendingSort?.let { wanted ->
+                pendingSort = null
+                selectedSort = -1
+                selectSort(wanted)
+            }
         }
     }
 
+    /** Sort picked before the options finished loading; applied when they arrive. */
+    private var pendingSort: Int? = null
+
     fun selectSort(index: Int) {
-        val sort = sorts.getOrNull(index) ?: return
         if (index == selectedSort) return
         selectedSort = index
+        if (index == 0 && sorts.isEmpty()) {
+            pendingSort = null
+            loadComments() // the default order is "Top"
+            return
+        }
+        val sort = sorts.getOrNull(index)
         commentsState = CommentsState.Loading
         comments = emptyList()
+        commentsNext = null
         replies.clear()
+        if (sort == null) {
+            pendingSort = index
+            if (sortsLoaded) {
+                // YouTube didn't offer sort options for this video.
+                pendingSort = null
+                selectedSort = 0
+                loadComments()
+            }
+            return
+        }
+        pendingSort = null
         viewModelScope.launch {
             try {
                 val page = withContext(Dispatchers.IO) { Comments.fromToken(videoId, sort.token) }
+                if (selectedSort != index) return@launch
                 comments = page.items
                 commentsNext = page.next
                 commentsState = CommentsState.Ready
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                commentsState = CommentsState.Error
+                if (selectedSort == index) commentsState = CommentsState.Error
             }
         }
     }
@@ -198,15 +232,24 @@ class WatchViewModel(private val videoId: String) : ViewModel() {
                 loading = false
             }
         }
+        if (loadCommentsNow) ensureComments()
+    }
+
+    /** Loads comments and, in parallel, the sort options, so both are ready together. */
+    fun ensureComments() {
+        if (commentsRequested) return
         loadComments()
+        loadSorts()
     }
 
     fun loadComments() {
+        commentsRequested = true
         selectedSort = 0
         commentsState = CommentsState.Loading
         viewModelScope.launch {
             try {
                 val page = withContext(Dispatchers.IO) { Comments.first(videoId) }
+                if (selectedSort != 0) return@launch // switched to another sort meanwhile
                 comments = page.items
                 commentsNext = page.next
                 commentCount = page.count
@@ -657,7 +700,7 @@ private fun CommentsTeaser(vm: WatchViewModel, onOpen: () -> Unit) {
 @Composable
 internal fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    LaunchedEffect(Unit) { vm.loadSorts() }
+    LaunchedEffect(Unit) { vm.ensureComments() }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Comments", style = MaterialTheme.typography.headlineSmallEmphasized)
@@ -666,17 +709,17 @@ internal fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit) {
                 Text("%,d".format(it), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (vm.sorts.size > 1) {
-            SingleChoiceSegmentedButtonRow(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                vm.sorts.forEachIndexed { index, sort ->
-                    SegmentedButton(
-                        selected = vm.selectedSort == index,
-                        onClick = { vm.selectSort(index) },
-                        shape = SegmentedButtonDefaults.itemShape(index, vm.sorts.size),
-                        label = { Text(sort.label) },
-                        modifier = Modifier.pressBounce(0.95f),
-                    )
-                }
+        // Shown straight away; the real options (tokens) load alongside the comments.
+        val labels = vm.sorts.map { it.label }.takeIf { it.size > 1 } ?: listOf("Top", "Newest")
+        SingleChoiceSegmentedButtonRow(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+            labels.forEachIndexed { index, label ->
+                SegmentedButton(
+                    selected = vm.selectedSort == index,
+                    onClick = { vm.selectSort(index) },
+                    shape = SegmentedButtonDefaults.itemShape(index, labels.size),
+                    label = { Text(label) },
+                    modifier = Modifier.pressBounce(0.95f),
+                )
             }
         }
         if (vm.commentsState == WatchViewModel.CommentsState.Loading) {
@@ -710,7 +753,7 @@ internal fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun CommentRow(c: Comment, isReply: Boolean) {
+internal fun CommentRow(c: Comment, isReply: Boolean) {
     Row(
         Modifier.fillMaxWidth().padding(start = if (isReply) 60.dp else 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp),
     ) {

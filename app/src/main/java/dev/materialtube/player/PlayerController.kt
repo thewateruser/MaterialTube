@@ -11,6 +11,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import dev.materialtube.Graph
 import dev.materialtube.data.VideoDetails
@@ -21,6 +22,8 @@ import dev.materialtube.data.sponsorblock.SponsorBlock
 import dev.materialtube.data.stats.WatchStats
 import dev.materialtube.streams.MediaSourceBuilder
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -92,6 +95,12 @@ object PlayerController {
                 true,
             )
             .setHandleAudioBecomingNoisy(true)
+            // Start playing after ~1s of buffer instead of the default 2.5s.
+            .setLoadControl(
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(15_000, 50_000, 1_000, 2_000)
+                    .build(),
+            )
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
             .build()
@@ -172,12 +181,52 @@ object PlayerController {
         _error.value = null
     }
 
+    /**
+     * Resolved streams, kept for a while so videos we prefetched (the next Shorts) start
+     * immediately. Stream URLs stay valid for hours; entries are dropped after 2h to be safe.
+     * Only touched from the main thread.
+     */
+    private class CachedInfo(val info: StreamInfo, val at: Long)
+    private val infoCache = object : LinkedHashMap<String, CachedInfo>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedInfo>?) = size > 20
+    }
+    private val infoInFlight = HashMap<String, Deferred<StreamInfo>>()
+
+    private fun fetchInfo(videoId: String): Deferred<StreamInfo> {
+        infoInFlight[videoId]?.let { return it }
+        // Runs in the controller scope so cancelling a load (fast scrolling) doesn't throw the work away.
+        val job = scope.async(Dispatchers.IO) {
+            StreamInfo.getInfo(ServiceList.YouTube, "https://www.youtube.com/watch?v=$videoId")
+        }
+        infoInFlight[videoId] = job
+        job.invokeOnCompletion { error ->
+            scope.launch {
+                infoInFlight.remove(videoId)
+                if (error == null) infoCache[videoId] = CachedInfo(job.getCompleted(), System.currentTimeMillis())
+            }
+        }
+        return job
+    }
+
+    private suspend fun streamInfo(videoId: String): StreamInfo {
+        infoCache[videoId]?.let { cached ->
+            if (System.currentTimeMillis() - cached.at < 2 * 60 * 60 * 1000L) return cached.info
+            infoCache.remove(videoId)
+        }
+        return fetchInfo(videoId).await()
+    }
+
+    /** Resolves a video's streams in the background so playing it later starts at once. */
+    fun prefetch(videoId: String) {
+        val cached = infoCache[videoId]
+        if (cached != null && System.currentTimeMillis() - cached.at < 2 * 60 * 60 * 1000L) return
+        fetchInfo(videoId)
+    }
+
     private suspend fun load(videoId: String, startPositionMs: Long, maxHeight: Int) {
         _loading.value = true
         try {
-            val streamInfo = info?.takeIf { it.id == videoId } ?: withContext(Dispatchers.IO) {
-                StreamInfo.getInfo(ServiceList.YouTube, "https://www.youtube.com/watch?v=$videoId")
-            }
+            val streamInfo = info?.takeIf { it.id == videoId } ?: streamInfo(videoId)
             info = streamInfo
             update {
                 it.copy(
@@ -254,6 +303,7 @@ object PlayerController {
             val expired = error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
             if (expired && info != null && !autoRetried) {
                 autoRetried = true
+                info?.id?.let { infoCache.remove(it) }
                 info = null
                 retry()
             } else {

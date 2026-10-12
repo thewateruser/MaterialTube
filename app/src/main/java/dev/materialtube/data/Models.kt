@@ -106,7 +106,30 @@ data class Post(
     val images: List<String> = emptyList(),
     val video: VideoItem? = null,
     val poll: List<String> = emptyList(),
+    /** Opens the post's own page, where its comments live. */
+    val detailBrowseId: String? = null,
+    val detailParams: String? = null,
+    /** perform_comment_action tokens for liking / removing the like. */
+    val likeAction: String? = null,
+    val unlikeAction: String? = null,
+    val liked: Boolean = false,
 )
+
+/** A comment on a community post (or a reply to one). */
+data class PostComment(
+    val id: String,
+    val author: String,
+    val avatar: String?,
+    val text: String,
+    val published: String?,
+    val likes: String?,
+    val replyCount: Int,
+    /** Continuation token for this comment's replies. */
+    val repliesToken: String?,
+    val byUploader: Boolean = false,
+)
+
+data class PostCommentsPage(val comments: List<PostComment>, val next: String?)
 
 data class PostsPage(val posts: List<Post>, val continuation: String?)
 

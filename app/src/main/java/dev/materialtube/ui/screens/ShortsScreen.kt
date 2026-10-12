@@ -84,9 +84,14 @@ fun ShortsScreen(startIndex: Int, onChannel: (String) -> Unit, onBack: () -> Uni
         onDispose { PlayerController.player.repeatMode = Player.REPEAT_MODE_OFF }
     }
     LaunchedEffect(pager.settledPage) {
-        val item = items[pager.settledPage]
+        val page = pager.settledPage
+        val item = items[page]
         PlayerController.play(item.id, item)
+        // Resolve the neighbours now so swiping to them starts playing straight away.
+        listOf(page + 1, page + 2, page - 1).forEach { i -> items.getOrNull(i)?.let { PlayerController.prefetch(it.id) } }
     }
+    // Swiping towards a page: start resolving it before the swipe settles.
+    LaunchedEffect(pager.targetPage) { items.getOrNull(pager.targetPage)?.let { PlayerController.prefetch(it.id) } }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         VerticalPager(state = pager, key = { items[it].id }, modifier = Modifier.fillMaxSize()) { page ->
@@ -106,7 +111,7 @@ private fun ShortPage(item: VideoItem, active: Boolean, onChannel: (String) -> U
     val signedIn by Graph.signedIn.collectAsState()
     var showComments by remember { mutableStateOf(false) }
     // Like state, channel info and comments come from the same model as the watch page.
-    val vm: WatchViewModel = viewModel(key = "watch-${item.id}") { WatchViewModel(item.id) }
+    val vm: WatchViewModel = viewModel(key = "watch-${item.id}") { WatchViewModel(item.id, loadCommentsNow = false) }
     val toast: (String) -> Unit = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
 
     Box(Modifier.fillMaxSize()) {

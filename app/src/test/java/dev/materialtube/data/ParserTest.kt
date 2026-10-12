@@ -243,4 +243,55 @@ class ParserTest {
         assertEquals(listOf(ChannelLink("Shop", "https://shop.example.com")), about.links)
         assertEquals("fallback", Parser.about(null, "fallback").description)
     }
+
+    @Test
+    fun parsesPostCommentEntities() {
+        val json = JSONObject(
+            """
+            {"onResponseReceivedEndpoints":[{"reloadContinuationItemsCommand":{"continuationItems":[
+              {"commentThreadRenderer":{"commentViewModel":{"commentViewModel":{"commentKey":"K2"}},
+                "replies":{"commentRepliesRenderer":{"contents":[{"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"REPLIES2"}}}}]}}}},
+              {"commentThreadRenderer":{"commentViewModel":{"commentViewModel":{"commentKey":"K1"}}}},
+              {"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"NEXT"}}}}
+            ]}}],
+            "frameworkUpdates":{"entityBatchUpdate":{"mutations":[
+              {"entityKey":"K1","payload":{"commentEntityPayload":{"properties":{"commentId":"c1","content":{"content":"First!"},"publishedTime":"1 day ago"},
+                "author":{"displayName":"@a","avatarThumbnailUrl":"https://a"},"toolbar":{"likeCountNotliked":"12","replyCount":""}}}},
+              {"entityKey":"K2","payload":{"commentEntityPayload":{"properties":{"commentId":"c2","content":{"content":"Nice"},"publishedTime":"2 days ago"},
+                "author":{"displayName":"@b","isCreator":true},"toolbar":{"likeCountNotliked":" ","replyCount":"3"}}}}
+            ]}}}
+            """,
+        )
+        val page = Parser.postComments(json)
+        assertEquals(listOf("c2", "c1"), page.comments.map { it.id }) // thread order, not mutation order
+        with(page.comments[0]) {
+            assertEquals("@b", author)
+            assertEquals(3, replyCount)
+            assertEquals("REPLIES2", repliesToken)
+            assertTrue(byUploader)
+            assertNull(likes)
+        }
+        assertEquals("12", page.comments[1].likes)
+        assertEquals("NEXT", page.next)
+    }
+
+    @Test
+    fun postHasCommentAndLikeEndpoints() {
+        val json = JSONObject(
+            """
+            {"backstagePostRenderer":{"postId":"P1","contentText":{"simpleText":"hi"},
+              "actionButtons":{"commentActionButtonsRenderer":{
+                "likeButton":{"toggleButtonRenderer":{"isToggled":false,
+                  "defaultServiceEndpoint":{"performCommentActionEndpoint":{"action":"LIKE_TOKEN"}},
+                  "toggledServiceEndpoint":{"performCommentActionEndpoint":{"action":"UNLIKE_TOKEN"}}}},
+                "replyButton":{"buttonRenderer":{"navigationEndpoint":{"browseEndpoint":{"browseId":"FEpost_detail","params":"PARAMS"}}}}}}}}
+            """,
+        )
+        val post = Parser.posts(json).posts.single()
+        assertEquals("FEpost_detail", post.detailBrowseId)
+        assertEquals("PARAMS", post.detailParams)
+        assertEquals("LIKE_TOKEN", post.likeAction)
+        assertEquals("UNLIKE_TOKEN", post.unlikeAction)
+        assertFalse(post.liked)
+    }
 }
