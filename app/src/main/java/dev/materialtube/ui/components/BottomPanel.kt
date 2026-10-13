@@ -43,7 +43,8 @@ import kotlin.math.abs
 /**
  * A non-modal bottom panel (comments), like the YouTube app's: it opens at [collapsedHeight]
  * with whatever is behind it (the video) still visible and playing, and its list scrolls at
- * that height. Drag the handle/header up for full height, down to shrink or close. Scrolling
+ * that height. Drag the handle/header up for [maxPanelHeight] (full height by default), down to
+ * shrink or close. Scrolling
  * down past the top of the list also pulls the panel down.
  *
  * [content] goes below the handle and should fill the remaining space (e.g. a LazyColumn with
@@ -54,12 +55,15 @@ fun BottomPanel(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     collapsedHeight: Dp? = null,
+    /** Tallest the panel can get (e.g. the area below a video); full height when null. */
+    maxPanelHeight: Dp? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         val density = LocalDensity.current
-        val full = constraints.maxHeight.toFloat()
-        val half = with(density) { (collapsedHeight ?: (maxHeight * 0.55f)).toPx() }.coerceIn(full * 0.3f, full)
+        val full = maxPanelHeight?.let { with(density) { it.toPx() } }?.coerceAtMost(constraints.maxHeight.toFloat())
+            ?: constraints.maxHeight.toFloat()
+        val half = with(density) { (collapsedHeight ?: (maxHeight * 0.55f)).toPx() }.coerceIn(minOf(full * 0.3f, full), full)
         val height = remember { Animatable(0f) }
         val scope = rememberCoroutineScope()
         val dismissing = remember { booleanArrayOf(false) }

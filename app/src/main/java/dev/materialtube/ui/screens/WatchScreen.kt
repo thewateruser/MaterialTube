@@ -654,7 +654,8 @@ fun WatchScreen(
     }
 
     if (showComments) {
-        CommentsSheet(vm, onDismiss = { showComments = false }, collapsedHeight = belowVideo)
+        // Never over the video: the panel fills, at most, the area below it.
+        CommentsSheet(vm, onDismiss = { showComments = false }, collapsedHeight = belowVideo, maxHeight = belowVideo)
     }
     }
 }
@@ -708,9 +709,14 @@ private fun CommentsTeaser(vm: WatchViewModel, onOpen: () -> Unit) {
 }
 
 @Composable
-internal fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit, collapsedHeight: Dp? = null) {
+internal fun CommentsSheet(
+    vm: WatchViewModel,
+    onDismiss: () -> Unit,
+    collapsedHeight: Dp? = null,
+    maxHeight: Dp? = null,
+) {
     LaunchedEffect(Unit) { vm.ensureComments() }
-    BottomPanel(onDismiss = onDismiss, collapsedHeight = collapsedHeight) {
+    BottomPanel(onDismiss = onDismiss, collapsedHeight = collapsedHeight, maxPanelHeight = maxHeight) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Comments", style = MaterialTheme.typography.headlineSmallEmphasized)
             vm.commentCount?.let {

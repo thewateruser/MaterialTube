@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3
+- Comments on the watch page never cover the video: the panel can grow, at most, to the area
+  below it.
+
 ## 0.6.2
 - **Comments you can scroll without going full screen**: the comments open as a panel over
   the lower part of the screen (below the video on the watch page), and the list scrolls at that
