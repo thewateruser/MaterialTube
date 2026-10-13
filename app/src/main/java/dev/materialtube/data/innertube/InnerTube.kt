@@ -1,5 +1,6 @@
 package dev.materialtube.data.innertube
 
+import dev.materialtube.data.Shelf
 import dev.materialtube.data.ChannelPage
 import dev.materialtube.data.FeedPage
 import dev.materialtube.data.NextInfo
@@ -40,7 +41,47 @@ class InnerTube(
     }
 
     /** Subscription uploads plus the list of subscribed channels (for the channel row). */
-    private val homeShorts = ShortsMixer(search = { shortsSearch(it) }, more = { shortsSearchMore(it) })
+    private val homeShorts = ShortsMixer(
+        search = { shortsSearch(it) },
+        more = { shortsSearchMore(it) },
+        personal = { personalShorts() },
+        personalMore = { reelSequenceMore(it, withAuth = true) },
+    )
+
+    /**
+     * Shorts recommended to the signed-in account: those in the web home feed, else YouTube's
+     * personal Shorts sequence (what the Shorts tab plays). Empty when signed out or when
+     * neither works, so the mixer falls back to Shorts searches.
+     */
+    fun personalShorts(): FeedPage {
+        if (auth?.isSignedIn != true) return FeedPage(emptyList(), null)
+        val webHome = runCatching { Parser.feed(call("browse", JSONObject().put("browseId", "FEwhat_to_watch"), WEB)) }
+            .getOrNull()?.shelves.orEmpty().flatMap { it.items }.filter { it.isShort }.distinctBy { it.id }
+        val sequence = runCatching { reelSequence(withAuth = true) }.getOrNull()
+        if (webHome.size >= 3) {
+            // Keep the sequence's token so later rows continue with personal Shorts.
+            return FeedPage(listOf(Shelf("Shorts", webHome)), sequence?.continuation)
+        }
+        return sequence?.takeIf { p -> p.shelves.sumOf { it.items.size } >= 3 } ?: FeedPage(emptyList(), null)
+    }
+
+    /** First page of the seedless Shorts sequence (the Shorts tab's feed). */
+    fun reelSequence(withAuth: Boolean): FeedPage {
+        val start = call(
+            "reel/reel_item_watch",
+            JSONObject()
+                .put("params", "CA8=")
+                .put("disablePlayerResponse", true)
+                .put("inputType", "REEL_WATCH_INPUT_TYPE_SEEDLESS"),
+            WEB, withAuth,
+        )
+        val token = findFirst(start) { it.has("sequenceContinuation") }?.str("sequenceContinuation")
+            ?: throw InnerTubeException("No Shorts sequence")
+        return reelSequenceMore(token, withAuth)
+    }
+
+    fun reelSequenceMore(token: String, withAuth: Boolean): FeedPage =
+        Parser.reelSequence(call("reel/reel_watch_sequence", JSONObject().put("sequenceParams", token), WEB, withAuth))
 
     /**
      * Search used to find Shorts. The signed-in TV search doesn't always mark results as Shorts,
@@ -167,6 +208,17 @@ class InnerTube(
         section("TV FEchannels") { call("browse", JSONObject().put("browseId", "FEchannels")) }
         section("WEB FEchannels") { call("browse", JSONObject().put("browseId", "FEchannels"), WEB) }
         section("WEB guide") { call("guide", JSONObject(), WEB) }
+        // Personal Shorts sources used for the home Shorts rows.
+        append("== Shorts sources\n")
+        val webHome = runCatching { Parser.feed(call("browse", JSONObject().put("browseId", "FEwhat_to_watch"), WEB)) }
+        append("web home: ").append(
+            webHome.exceptionOrNull()?.message ?: "${webHome.getOrNull()?.shelves?.sumOf { it.items.size }} items, " +
+                "${webHome.getOrNull()?.shelves?.sumOf { s -> s.items.count { it.isShort } }} shorts",
+        ).append('\n')
+        val seq = runCatching { reelSequence(withAuth = true) }
+        append("reel sequence: ").append(
+            seq.exceptionOrNull()?.message ?: "${seq.getOrNull()?.shelves?.sumOf { it.items.size }} shorts, next=${seq.getOrNull()?.continuation != null}",
+        ).append('\n')
     }
 
     fun history(): FeedPage = browse("FEhistory")

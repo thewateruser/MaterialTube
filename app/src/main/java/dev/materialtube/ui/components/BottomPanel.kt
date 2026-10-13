@@ -57,13 +57,18 @@ fun BottomPanel(
     collapsedHeight: Dp? = null,
     /** Tallest the panel can get (e.g. the area below a video); full height when null. */
     maxPanelHeight: Dp? = null,
+    /** Alternative to [maxPanelHeight]: at most this fraction of the available height. */
+    maxFraction: Float = 1f,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         val density = LocalDensity.current
-        val full = maxPanelHeight?.let { with(density) { it.toPx() } }?.coerceAtMost(constraints.maxHeight.toFloat())
-            ?: constraints.maxHeight.toFloat()
-        val half = with(density) { (collapsedHeight ?: (maxHeight * 0.55f)).toPx() }.coerceIn(minOf(full * 0.3f, full), full)
+        val available = constraints.maxHeight.toFloat()
+        val full = (maxPanelHeight?.let { with(density) { it.toPx() } } ?: available)
+            .coerceAtMost(available * maxFraction)
+        // Capped panels open at their cap; full-height ones open at about half.
+        val half = (collapsedHeight?.let { with(density) { it.toPx() } } ?: if (full < available) full else available * 0.55f)
+            .coerceIn(minOf(full * 0.3f, full), full)
         val height = remember { Animatable(0f) }
         val scope = rememberCoroutineScope()
         val dismissing = remember { booleanArrayOf(false) }

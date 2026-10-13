@@ -78,7 +78,7 @@ class FeedViewModel(
         viewModelScope.launch {
             try {
                 val page = withContext(Dispatchers.IO) { first() }
-                shelves = page.shelves
+                shelves = tidy(page.shelves)
                 channels = page.channels
                 continuation = page.continuation
             } catch (e: CancellationException) {
@@ -103,7 +103,7 @@ class FeedViewModel(
                 val fresh = page.shelves
                     .map { s -> s.copy(items = s.items.filter { seen.add(it.id) }) }
                     .filter { it.items.isNotEmpty() }
-                shelves = shelves + fresh
+                shelves = tidy(shelves + fresh)
                 continuation = page.continuation.takeIf { it != token && fresh.isNotEmpty() }
             } catch (e: CancellationException) {
                 throw e
@@ -116,6 +116,28 @@ class FeedViewModel(
     }
 
     val canLoadMore get() = continuation != null
+
+    /**
+     * A section left with a single video (the rest were duplicates of ones already shown) loses
+     * its heading and joins its neighbours, instead of showing a title over one video.
+     */
+    private fun tidy(list: List<Shelf>): List<Shelf> {
+        val out = mutableListOf<Shelf>()
+        for (shelf in list) {
+            val videos = shelf.items.count { !it.isShort }
+            val lonely = videos in 1..1 && shelf.items.none { it.isShort }
+            val s = if (lonely) shelf.copy(title = null) else shelf
+            val prev = out.lastOrNull()
+            if (s.title == null && prev != null && prev.items.none { it.isShort } && s.items.none { it.isShort } &&
+                (prev.title == null || lonely)
+            ) {
+                out[out.lastIndex] = prev.copy(items = prev.items + s.items)
+            } else {
+                out += s
+            }
+        }
+        return out
+    }
 }
 
 @Composable

@@ -714,9 +714,10 @@ internal fun CommentsSheet(
     onDismiss: () -> Unit,
     collapsedHeight: Dp? = null,
     maxHeight: Dp? = null,
+    maxFraction: Float = 1f,
 ) {
     LaunchedEffect(Unit) { vm.ensureComments() }
-    BottomPanel(onDismiss = onDismiss, collapsedHeight = collapsedHeight, maxPanelHeight = maxHeight) {
+    BottomPanel(onDismiss = onDismiss, collapsedHeight = collapsedHeight, maxPanelHeight = maxHeight, maxFraction = maxFraction) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Comments", style = MaterialTheme.typography.headlineSmallEmphasized)
             vm.commentCount?.let {

@@ -124,4 +124,15 @@ class LiveApiTest {
         println("shorts rows per page: $rows")
         assertTrue(rows.all { it >= 3 })
     }
+
+    /** Diagnostics for the personal Shorts sources (signed out here, so only checks plumbing). */
+    @Test
+    fun personalShortsSources() {
+        val seq = runCatching { api.reelSequence(withAuth = false) }
+        println("REEL SEQUENCE: ${seq.exceptionOrNull()?.message ?: "items=${seq.getOrNull()?.shelves?.sumOf { it.items.size }} next=${seq.getOrNull()?.continuation != null} first=${seq.getOrNull()?.shelves?.firstOrNull()?.items?.firstOrNull()}"}")
+        seq.getOrNull()?.continuation?.let { t ->
+            val more = runCatching { api.reelSequenceMore(t, withAuth = false) }
+            println("REEL MORE: ${more.exceptionOrNull()?.message ?: "items=${more.getOrNull()?.shelves?.sumOf { it.items.size }}"}")
+        }
+    }
 }

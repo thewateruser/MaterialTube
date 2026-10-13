@@ -12,6 +12,9 @@ import dev.materialtube.data.VideoItem
 class ShortsMixer(
     private val search: (String) -> FeedPage,
     private val more: (String) -> FeedPage,
+    /** The account's own Shorts (recommendations), used before any search. */
+    private val personal: (() -> FeedPage)? = null,
+    private val personalMore: ((String) -> FeedPage)? = null,
     private val videosPerRow: Int = 8,
     private val rowSize: Int = 10,
 ) {
@@ -30,7 +33,12 @@ class ShortsMixer(
         used.clear()
         queryIndex = 0
         token = null
+        personalDone = personal == null
+        personalToken = null
     }
+
+    private var personalDone = personal == null
+    private var personalToken: String? = null
 
     @Synchronized
     fun mix(page: FeedPage): FeedPage {
@@ -73,6 +81,17 @@ class ShortsMixer(
 
     /** Pulls the next page of Shorts into the pool. */
     private fun refill(): Boolean {
+        if (!personalDone) {
+            val page = runCatching {
+                val t = personalToken
+                if (t != null) personalMore?.invoke(t) else personal?.invoke()
+            }.getOrNull()
+            personalToken = page?.continuation
+            val fresh = page?.shelves.orEmpty().flatMap { it.items }.filter { it.isShort && used.add(it.id) }
+            pool.addAll(fresh)
+            if (fresh.isEmpty() || personalToken == null || personalMore == null) personalDone = true
+            if (fresh.isNotEmpty()) return true
+        }
         if (queryIndex >= queries.size) return false
         val page = runCatching {
             val t = token

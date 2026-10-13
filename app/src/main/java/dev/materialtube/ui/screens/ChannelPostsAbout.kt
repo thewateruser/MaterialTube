@@ -15,6 +15,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.materialtube.data.PostComment
 import dev.materialtube.streams.Comment
 import dev.materialtube.ui.components.pressBounce
+import dev.materialtube.ui.components.BottomPanel
+import androidx.compose.runtime.key
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -266,6 +268,8 @@ fun PostsList(vm: PostsViewModel, header: @Composable () -> Unit, onVideo: (Vide
         }
     }
     LaunchedEffect(state) { snapshotFlow { nearEnd }.collect { if (it) vm.loadMore() } }
+    var commentsFor by remember { mutableStateOf<Post?>(null) }
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(state = state, modifier = Modifier.fillMaxSize()) {
         item { header() }
         when {
@@ -279,7 +283,7 @@ fun PostsList(vm: PostsViewModel, header: @Composable () -> Unit, onVideo: (Vide
                 )
             }
             else -> {
-                items(vm.posts, key = { it.id }) { PostCard(it, vm, onVideo) }
+                items(vm.posts, key = { it.id }) { PostCard(it, vm, onVideo) { commentsFor = it } }
                 if (vm.canLoadMore) {
                     item {
                         Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { LoadingIndicator() }
@@ -288,12 +292,13 @@ fun PostsList(vm: PostsViewModel, header: @Composable () -> Unit, onVideo: (Vide
             }
         }
     }
+    commentsFor?.let { post -> key(post.id) { PostCommentsSheet(post) { commentsFor = null } } }
+    }
 }
 
 @Composable
-private fun PostCard(post: Post, vm: PostsViewModel, onVideo: (VideoItem) -> Unit) {
+private fun PostCard(post: Post, vm: PostsViewModel, onVideo: (VideoItem) -> Unit, onComments: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    var showComments by remember { mutableStateOf(false) }
     val signedIn by Graph.signedIn.collectAsState()
     val context = LocalContext.current
     val liked = vm.liked[post.id] ?: post.liked
@@ -399,7 +404,7 @@ private fun PostCard(post: Post, vm: PostsViewModel, onVideo: (VideoItem) -> Uni
                 }
                 Spacer(Modifier.width(12.dp))
                 if (post.detailBrowseId != null) {
-                    TextButton(onClick = { showComments = true }, modifier = Modifier.pressBounce()) {
+                    TextButton(onClick = onComments, modifier = Modifier.pressBounce()) {
                         Icon(Icons.AutoMirrored.Outlined.Comment, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(post.comments?.let { "$it comments" } ?: "Comments")
@@ -413,13 +418,13 @@ private fun PostCard(post: Post, vm: PostsViewModel, onVideo: (VideoItem) -> Uni
             }
         }
     }
-    if (showComments) PostCommentsSheet(post) { showComments = false }
 }
 
 @Composable
 private fun PostCommentsSheet(post: Post, onDismiss: () -> Unit) {
     val vm: PostCommentsViewModel = viewModel(key = "post-comments:${post.id}") { PostCommentsViewModel(post) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    // Same panel as video comments; it covers at most the lower 65% of the page.
+    BottomPanel(onDismiss = onDismiss, maxFraction = 0.65f) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Comments", style = MaterialTheme.typography.headlineSmallEmphasized)
             post.comments?.let {
@@ -437,7 +442,7 @@ private fun PostCommentsSheet(post: Post, onDismiss: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(24.dp),
             )
-            else -> LazyColumn(Modifier.fillMaxWidth()) {
+            else -> LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
                 items(vm.comments, key = { it.id }) { c ->
                     CommentRow(c, isReply = false)
                     val loaded = vm.replies[c.id]

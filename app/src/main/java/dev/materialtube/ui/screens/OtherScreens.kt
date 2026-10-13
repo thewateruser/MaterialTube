@@ -189,7 +189,7 @@ fun SettingsScreen(onSignIn: () -> Unit) {
             var copying by remember { mutableStateOf(false) }
             ListItem(
                 headlineContent = { Text(if (copying) "Collecting…" else "Copy diagnostics") },
-                supportingContent = { Text("Copies what YouTube returns for your subscriptions, to paste into a bug report") },
+                supportingContent = { Text("Copies what YouTube returns for your subscriptions and Shorts, to paste into a bug report") },
                 leadingContent = { Icon(Icons.Filled.BugReport, null) },
                 modifier = Modifier.bounceClick(enabled = !copying, pressedScale = 0.97f) {
                     copying = true

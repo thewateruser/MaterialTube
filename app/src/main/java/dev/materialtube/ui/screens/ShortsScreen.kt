@@ -249,6 +249,7 @@ private fun ShortPage(item: VideoItem, pool: ShortsPlayers, onChannel: (String) 
             }
         }
         // Over the lower part of the Short, which keeps playing above it.
-        if (showComments) CommentsSheet(vm, onDismiss = { showComments = false })
+        // Never over the top part: the panel stays at 60% so the Short is still visible.
+        if (showComments) CommentsSheet(vm, onDismiss = { showComments = false }, maxFraction = 0.6f)
     }
 }

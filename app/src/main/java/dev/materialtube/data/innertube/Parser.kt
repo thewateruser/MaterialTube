@@ -584,4 +584,26 @@ object Parser {
         }
         return out
     }
+
+    /** Entries of a reel_watch_sequence response (Shorts ids + thumbnails) and its continuation. */
+    fun reelSequence(root: JSONObject): FeedPage {
+        val items = LinkedHashMap<String, VideoItem>()
+        root.arr("entries")?.objects()?.forEach { e ->
+            val ep = findFirst(e) { it.has("reelWatchEndpoint") }?.obj("reelWatchEndpoint") ?: return@forEach
+            val id = ep.str("videoId") ?: return@forEach
+            if (id in items) return@forEach
+            val title = text(findFirst(ep.opt("overlay")) { it.has("reelTitleText") }?.opt("reelTitleText"))
+                ?: findFirst(e) { it.has("accessibilityText") }?.str("accessibilityText")
+            items[id] = VideoItem(
+                id = id,
+                title = title.orEmpty(),
+                thumbnail = bestThumb(ep.obj("thumbnail")) ?: thumbFor(id),
+                isShort = true,
+            )
+        }
+        val next = findFirst(root.opt("continuationEndpoint")) { it.has("continuationCommand") }
+            ?.obj("continuationCommand")?.str("token")
+            ?: root.str("continuation")
+        return FeedPage(if (items.isEmpty()) emptyList() else listOf(Shelf("Shorts", items.values.toList())), next)
+    }
 }

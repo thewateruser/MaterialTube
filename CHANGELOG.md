@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0
+- **Home Shorts from your account**: Shorts rows now come from your own recommendations (the
+  Shorts in your web home feed, then YouTube's personal Shorts sequence). Searches are only a
+  fallback when neither is available.
+- Home sections left with a single video (after duplicates were removed) no longer show a
+  heading over one video; they join the neighbouring section.
+- Comments on Shorts and community posts use the same panel as videos and never go past
+  60% / 65% of the screen.
+- Settings → Copy diagnostics also reports the Shorts sources.
+
 ## 0.6.3
 - Comments on the watch page never cover the video: the panel can grow, at most, to the area
   below it.

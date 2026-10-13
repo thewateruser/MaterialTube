@@ -294,4 +294,43 @@ class ParserTest {
         assertEquals("UNLIKE_TOKEN", post.unlikeAction)
         assertFalse(post.liked)
     }
+
+    @Test
+    fun mixerUsesPersonalShortsBeforeSearch() {
+        fun v(id: String, short: Boolean = false) = VideoItem(id, id, isShort = short)
+        var searched = 0
+        var personalPages = 0
+        val mixer = dev.materialtube.data.innertube.ShortsMixer(
+            search = { searched++; FeedPage(listOf(Shelf(null, List(12) { v("q$searched-$it", true) })), null) },
+            more = { FeedPage(emptyList(), null) },
+            personal = { personalPages++; FeedPage(listOf(Shelf("Shorts", List(10) { v("p0-$it", true) })), "P1") },
+            personalMore = { t -> personalPages++; FeedPage(listOf(Shelf("Shorts", List(10) { v("p$t-$it", true) })), null) },
+        )
+        val home = FeedPage(List(4) { i -> Shelf("Shelf $i", List(8) { j -> v("v$i-$j") }) }, null)
+        val rows = mixer.mix(home).shelves.filter { it.title == "Shorts" }
+        assertEquals(4, rows.size)
+        // The first two rows come from the account's own Shorts, only then from searches.
+        assertTrue(rows[0].items.all { it.id.startsWith("p0-") })
+        assertTrue(rows[1].items.all { it.id.startsWith("pP1-") })
+        assertTrue(rows[2].items.all { it.id.startsWith("q") })
+        assertEquals(2, personalPages)
+    }
+
+    @Test
+    fun parsesReelSequence() {
+        val json = JSONObject(
+            """
+            {"entries":[
+              {"command":{"reelWatchEndpoint":{"videoId":"short000001","thumbnail":{"thumbnails":[{"url":"https://t/1","width":405}]}}}},
+              {"command":{"reelWatchEndpoint":{"videoId":"short000002"}}}],
+             "continuationEndpoint":{"continuationCommand":{"token":"SEQ2"}}}
+            """,
+        )
+        val page = Parser.reelSequence(json)
+        val items = page.shelves.single().items
+        assertEquals(listOf("short000001", "short000002"), items.map { it.id })
+        assertTrue(items.all { it.isShort })
+        assertEquals("https://t/1", items[0].thumbnail)
+        assertEquals("SEQ2", page.continuation)
+    }
 }
