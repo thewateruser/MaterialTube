@@ -208,12 +208,18 @@ object PlayerController {
         return job
     }
 
-    private suspend fun streamInfo(videoId: String): StreamInfo {
+    /** Resolved streams for [videoId], from the cache when available. */
+    suspend fun streamInfo(videoId: String): StreamInfo {
         infoCache[videoId]?.let { cached ->
             if (System.currentTimeMillis() - cached.at < 2 * 60 * 60 * 1000L) return cached.info
             infoCache.remove(videoId)
         }
         return fetchInfo(videoId).await()
+    }
+
+    /** Drops cached streams for [videoId] (e.g. after its URLs expired). */
+    fun forget(videoId: String) {
+        infoCache.remove(videoId)
     }
 
     /** Resolves a video's streams in the background so playing it later starts at once. */

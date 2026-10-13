@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1
+- **Shorts play instantly**: the current Short, the previous one and the next two each get their
+  own player, prepared and paused on the first frame, so swiping (forwards or back) just
+  switches players instead of loading from scratch.
+- Shorts show their thumbnail until the video's first frame, never a black screen; a failed
+  Short shows Retry.
+
 ## 0.6.0
 - **Faster Shorts**: the next Shorts are resolved in the background while you watch, so swiping
   starts the next one straight away; playback starts after ~1s of buffer instead of 2.5s.

@@ -6,6 +6,13 @@ import androidx.compose.foundation.shape.CircleShape
 import dev.materialtube.ui.components.pressBounce
 import dev.materialtube.ui.components.bounceClick
 import android.widget.Toast
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.runtime.key
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import dev.materialtube.data.innertube.Parser
+import dev.materialtube.player.ShortsPlayers
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -79,23 +86,47 @@ fun ShortsScreen(startIndex: Int, onChannel: (String) -> Unit, onBack: () -> Uni
     }
     val pager = rememberPagerState(initialPage = startIndex.coerceIn(0, items.lastIndex)) { items.size }
 
+    val context = LocalContext.current
+    val pool = remember { ShortsPlayers(context) }
     DisposableEffect(Unit) {
-        PlayerController.player.repeatMode = Player.REPEAT_MODE_ONE
-        onDispose { PlayerController.player.repeatMode = Player.REPEAT_MODE_OFF }
+        // Shorts have their own players; stop whatever video was playing.
+        PlayerController.player.pause()
+        onDispose { pool.releaseAll() }
+    }
+    // Pause when the app goes to the background, resume when it comes back.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> pool.pauseAll()
+                Lifecycle.Event.ON_RESUME -> pool.resume()
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(pager.settledPage) {
         val page = pager.settledPage
-        val item = items[page]
-        PlayerController.play(item.id, item)
-        // Resolve the neighbours now so swiping to them starts playing straight away.
-        listOf(page + 1, page + 2, page - 1).forEach { i -> items.getOrNull(i)?.let { PlayerController.prefetch(it.id) } }
+        // Keep players for the previous Short and the next two, prepared and paused on their
+        // first frame, so swiping is instant; resolve the one after that ahead of time.
+        val keep = (page - 1..page + 2).mapNotNull { items.getOrNull(it)?.id }
+        pool.keepOnly(keep)
+        items[page].id.let { pool.ensure(it); pool.activate(it) }
+        keep.forEach(pool::ensure)
+        items.getOrNull(page + 3)?.let { PlayerController.prefetch(it.id) }
     }
-    // Swiping towards a page: start resolving it before the swipe settles.
-    LaunchedEffect(pager.targetPage) { items.getOrNull(pager.targetPage)?.let { PlayerController.prefetch(it.id) } }
+    // Fast flings: start on the page being swiped to before the swipe settles.
+    LaunchedEffect(pager.targetPage) { items.getOrNull(pager.targetPage)?.let { pool.ensure(it.id) } }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        VerticalPager(state = pager, key = { items[it].id }, modifier = Modifier.fillMaxSize()) { page ->
-            ShortPage(items[page], active = page == pager.settledPage, onChannel = onChannel)
+        VerticalPager(
+            state = pager,
+            key = { items[it].id },
+            beyondViewportPageCount = 1,
+            modifier = Modifier.fillMaxSize(),
+        ) { page ->
+            ShortPage(items[page], pool, onChannel = onChannel)
         }
         FilledTonalIconButton(
             onClick = onBack,
@@ -106,7 +137,7 @@ fun ShortsScreen(startIndex: Int, onChannel: (String) -> Unit, onBack: () -> Uni
 }
 
 @Composable
-private fun ShortPage(item: VideoItem, active: Boolean, onChannel: (String) -> Unit) {
+private fun ShortPage(item: VideoItem, pool: ShortsPlayers, onChannel: (String) -> Unit) {
     val context = LocalContext.current
     val signedIn by Graph.signedIn.collectAsState()
     var showComments by remember { mutableStateOf(false) }
@@ -114,32 +145,45 @@ private fun ShortPage(item: VideoItem, active: Boolean, onChannel: (String) -> U
     val vm: WatchViewModel = viewModel(key = "watch-${item.id}") { WatchViewModel(item.id, loadCommentsNow = false) }
     val toast: (String) -> Unit = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
 
+    val player = pool.players[item.id]
     Box(Modifier.fillMaxSize()) {
-        if (active) {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = PlayerController.player
-                        useController = false
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                        keepScreenOn = true
-                    }
-                },
-                onRelease = { it.player = null },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable {
-                        val p = PlayerController.player
-                        if (p.isPlaying) p.pause() else p.play()
+        if (player != null) {
+            key(player) {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            this.player = player
+                            useController = false
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                            keepScreenOn = true
+                            setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        }
                     },
-            )
-        } else {
+                    onRelease = { it.player = null },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable { pool.togglePlay(item.id) },
+                )
+            }
+        }
+        // Thumbnail until the first frame is on screen, so there's never a black page.
+        if (pool.firstFrame[item.id] != true) {
             AsyncImage(
-                model = item.thumbnail,
+                model = item.thumbnail ?: Parser.thumbFor(item.id),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().clickable { pool.togglePlay(item.id) },
             )
+        }
+        pool.errors[item.id]?.let { message ->
+            Column(
+                Modifier.align(Alignment.Center).padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(message, color = Color.White, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(onClick = { pool.retry(item.id) }, modifier = Modifier.pressBounce()) { Text("Retry") }
+            }
         }
         Box(
             Modifier

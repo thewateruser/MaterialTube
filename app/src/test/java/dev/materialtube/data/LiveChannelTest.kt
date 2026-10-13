@@ -83,4 +83,15 @@ class LiveChannelTest {
         }
         page.next?.let { assertTrue(api.postCommentsMore(it).comments.isNotEmpty()) }
     }
+
+    @Test
+    fun shortsThumbnailsLoad() {
+        val items = api.channelTab(channelId, ChannelTab.Shorts).shelves.flatMap { it.items }.take(3)
+        val http = FallbackDns.client()
+        items.forEach { v ->
+            val code = http.newCall(okhttp3.Request.Builder().url(v.thumbnail!!).build()).execute().use { it.code }
+            println("SHORT THUMB ${v.id} $code ${v.thumbnail}")
+            assertTrue("thumbnail ${v.thumbnail} -> $code", code == 200)
+        }
+    }
 }
