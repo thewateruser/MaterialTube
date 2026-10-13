@@ -89,9 +89,11 @@ class LiveChannelTest {
         val items = api.channelTab(channelId, ChannelTab.Shorts).shelves.flatMap { it.items }.take(3)
         val http = FallbackDns.client()
         items.forEach { v ->
-            val code = http.newCall(okhttp3.Request.Builder().url(v.thumbnail!!).build()).execute().use { it.code }
-            println("SHORT THUMB ${v.id} $code ${v.thumbnail}")
-            assertTrue("thumbnail ${v.thumbnail} -> $code", code == 200)
+            val (code, size) = http.newCall(okhttp3.Request.Builder().url(v.thumbnail!!).build()).execute()
+                .use { it.code to (it.body?.bytes()?.size ?: 0) }
+            println("SHORT THUMB ${v.id} $code ${size}B ${v.thumbnail}")
+            assertTrue("thumbnail ${v.thumbnail} -> $code", code == 200 && size > 2000)
+            assertTrue("fell back to a generic thumbnail: ${v.thumbnail}", "hqdefault" !in v.thumbnail!!)
         }
     }
 }

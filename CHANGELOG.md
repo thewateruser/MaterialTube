@@ -6,6 +6,7 @@
   switches players instead of loading from scratch.
 - Shorts show their thumbnail until the video's first frame, never a black screen; a failed
   Short shows Retry.
+- Channel Shorts grids show their thumbnails again.
 
 ## 0.6.0
 - **Faster Shorts**: the next Shorts are resolved in the background while you watch, so swiping

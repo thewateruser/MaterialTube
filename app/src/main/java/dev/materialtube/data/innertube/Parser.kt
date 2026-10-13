@@ -280,7 +280,12 @@ object Parser {
             id = id,
             title = text(overlay?.opt("primaryText")) ?: text(l.obj("accessibilityText")) ?: return null,
             meta = text(overlay?.opt("secondaryText")),
-            thumbnail = bestThumb(l.obj("thumbnail")) ?: "https://i.ytimg.com/vi/$id/oardefault.jpg",
+            // The image sits at different depths ("thumbnail" or "thumbnailViewModel.image"); every
+            // video has hqdefault, unlike the vertical oardefault.
+            thumbnail = bestThumb(l.obj("thumbnail"))
+                ?: findFirst(l) { it.has("sources") && it.optJSONArray("sources")?.optJSONObject(0)?.has("url") == true }
+                    ?.let { bestThumb(it) }
+                ?: thumbFor(id),
             isShort = true,
         )
     }
