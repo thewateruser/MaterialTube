@@ -108,13 +108,14 @@ fun ShortsScreen(startIndex: Int, onChannel: (String) -> Unit, onBack: () -> Uni
     }
     LaunchedEffect(pager.settledPage) {
         val page = pager.settledPage
-        // Keep players for the previous Short and the next two, prepared and paused on their
-        // first frame, so swiping is instant; resolve the one after that ahead of time.
-        val keep = (page - 1..page + 2).mapNotNull { items.getOrNull(it)?.id }
+        // Keep players for the previous and next Short, prepared and paused on their first
+        // frame, so swiping is instant; resolve the two after that ahead of time. (More players
+        // would need more hardware video decoders than some phones have.)
+        val keep = (page - 1..page + 1).mapNotNull { items.getOrNull(it)?.id }
         pool.keepOnly(keep)
         items[page].id.let { pool.ensure(it); pool.activate(it) }
         keep.forEach(pool::ensure)
-        items.getOrNull(page + 3)?.let { PlayerController.prefetch(it.id) }
+        listOf(page + 2, page + 3).forEach { i -> items.getOrNull(i)?.let { PlayerController.prefetch(it.id) } }
     }
     // Fast flings: start on the page being swiped to before the swipe settles.
     LaunchedEffect(pager.targetPage) { items.getOrNull(pager.targetPage)?.let { pool.ensure(it.id) } }
@@ -247,6 +248,7 @@ private fun ShortPage(item: VideoItem, pool: ShortsPlayers, onChannel: (String) 
                 }
             }
         }
+        // Over the lower part of the Short, which keeps playing above it.
+        if (showComments) CommentsSheet(vm, onDismiss = { showComments = false })
     }
-    if (showComments) CommentsSheet(vm, onDismiss = { showComments = false })
 }

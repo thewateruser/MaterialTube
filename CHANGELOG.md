@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.2
+- **Comments you can scroll without going full screen**: the comments open as a panel over
+  the lower part of the screen (below the video on the watch page), and the list scrolls at that
+  height while the video keeps playing. Drag the panel up for full screen, down to close.
+- **Stubborn Shorts**: a Short that errors or shows nothing for 7s is retried automatically
+  (fresh streams, then 720p) before a Retry button appears. The player pool is now previous,
+  current and next, which needs fewer hardware decoders.
+
 ## 0.6.1
 - **Shorts play instantly**: the current Short, the previous one and the next two each get their
   own player, prepared and paused on the first frame, so swiping (forwards or back) just

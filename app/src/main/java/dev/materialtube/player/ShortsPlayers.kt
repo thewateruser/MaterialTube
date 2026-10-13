@@ -39,6 +39,9 @@ class ShortsPlayers(private val context: Context) {
     val firstFrame = mutableStateMapOf<String, Boolean>()
     val errors = mutableStateMapOf<String, String>()
     private var active: String? = null
+    /** Automatic retries used per video (fresh streams, then 720p), before showing Retry. */
+    private val attempts = HashMap<String, Int>()
+    private var watchdog: Job? = null
 
     /** Creates and starts preparing a player for [videoId] if there isn't one yet. */
     fun ensure(videoId: String) {
@@ -63,29 +66,58 @@ class ShortsPlayers(private val context: Context) {
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                errors[videoId] = error.message ?: "Playback error"
+                fail(videoId, error.message ?: "Playback error")
             }
         })
         players[videoId] = player
         jobs[videoId] = scope.launch {
             try {
                 val info = PlayerController.streamInfo(videoId)
+                // The last automatic retry drops to 720p: some phones run out of hardware
+                // decoders for several high-resolution players at once.
+                val maxHeight = if ((attempts[videoId] ?: 0) >= 2) minOf(720, Graph.prefs.maxQuality) else Graph.prefs.maxQuality
                 val built = withContext(Dispatchers.IO) {
-                    MediaSourceBuilder.build(info, Graph.prefs.maxQuality, MediaMetadata.Builder().setTitle(info.name).build())
+                    MediaSourceBuilder.build(info, maxHeight, MediaMetadata.Builder().setTitle(info.name).build())
                 }
                 player.setMediaSource(built.source)
                 player.prepare()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                errors[videoId] = e.message ?: "Couldn't load this Short"
+                fail(videoId, e.message ?: "Couldn't load this Short")
             }
         }
+    }
+
+    /** Retries automatically a couple of times before showing the error. */
+    private fun fail(videoId: String, message: String) {
+        val tries = attempts[videoId] ?: 0
+        if (tries < 2) {
+            attempts[videoId] = tries + 1
+            scope.launch { reload(videoId) }
+        } else {
+            errors[videoId] = message
+        }
+    }
+
+    private fun reload(videoId: String) {
+        PlayerController.forget(videoId)
+        release(videoId)
+        ensure(videoId)
+        if (videoId == active) activate(videoId)
     }
 
     /** Plays [videoId] (from the start if it had been swiped away) and pauses the rest. */
     fun activate(videoId: String) {
         active = videoId
+        // Nothing on screen after a few seconds (stuck loading): reload it.
+        watchdog?.cancel()
+        watchdog = scope.launch {
+            kotlinx.coroutines.delay(7_000)
+            if (active == videoId && firstFrame[videoId] != true && videoId !in errors) {
+                fail(videoId, "This Short won't load")
+            }
+        }
         players.forEach { (id, p) ->
             if (id == videoId) {
                 p.playWhenReady = true
@@ -106,9 +138,8 @@ class ShortsPlayers(private val context: Context) {
     }
 
     fun retry(videoId: String) {
-        PlayerController.forget(videoId)
-        release(videoId)
-        ensure(videoId)
+        attempts[videoId] = 2 // straight to the safest settings
+        reload(videoId)
     }
 
     /** Releases every player except those for [videoIds]. */
@@ -124,6 +155,7 @@ class ShortsPlayers(private val context: Context) {
     }
 
     fun releaseAll() {
+        watchdog?.cancel()
         players.keys.toList().forEach(::release)
         scope.cancel()
     }

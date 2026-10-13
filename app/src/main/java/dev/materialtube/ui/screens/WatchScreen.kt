@@ -3,6 +3,12 @@
 package dev.materialtube.ui.screens
 
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.unit.Dp
+import dev.materialtube.ui.components.BottomPanel
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.fadeIn
@@ -469,6 +475,9 @@ fun WatchScreen(
         return
     }
 
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    // Comments open over the area below the video, so the video stays visible.
+    val belowVideo = maxHeight - WindowInsets.statusBars.asPaddingValues().calculateTopPadding() - maxWidth * 9f / 16f
     Column(
         Modifier
             .fillMaxSize()
@@ -645,7 +654,8 @@ fun WatchScreen(
     }
 
     if (showComments) {
-        CommentsSheet(vm, onDismiss = { showComments = false })
+        CommentsSheet(vm, onDismiss = { showComments = false }, collapsedHeight = belowVideo)
+    }
     }
 }
 
@@ -698,10 +708,9 @@ private fun CommentsTeaser(vm: WatchViewModel, onOpen: () -> Unit) {
 }
 
 @Composable
-internal fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+internal fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit, collapsedHeight: Dp? = null) {
     LaunchedEffect(Unit) { vm.ensureComments() }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    BottomPanel(onDismiss = onDismiss, collapsedHeight = collapsedHeight) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Comments", style = MaterialTheme.typography.headlineSmallEmphasized)
             vm.commentCount?.let {
@@ -726,7 +735,7 @@ internal fun CommentsSheet(vm: WatchViewModel, onDismiss: () -> Unit) {
             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { LoadingIndicator() }
         }
         Spacer(Modifier.height(8.dp))
-        LazyColumn(Modifier.fillMaxWidth()) {
+        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
             items(vm.comments, key = { it.id }) { c ->
                 CommentRow(c, isReply = false)
                 val loaded = vm.replies[c.id]
