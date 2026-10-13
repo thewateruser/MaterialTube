@@ -592,8 +592,8 @@ object Parser {
             val ep = findFirst(e) { it.has("reelWatchEndpoint") }?.obj("reelWatchEndpoint") ?: return@forEach
             val id = ep.str("videoId") ?: return@forEach
             if (id in items) return@forEach
-            val title = text(findFirst(ep.opt("overlay")) { it.has("reelTitleText") }?.opt("reelTitleText"))
-                ?: findFirst(e) { it.has("accessibilityText") }?.str("accessibilityText")
+            // The sequence rarely carries titles; never guess from other labels (e.g. "Subscribe").
+            val title = text(findFirst(e) { it.has("reelTitleText") }?.opt("reelTitleText"))
             items[id] = VideoItem(
                 id = id,
                 title = title.orEmpty(),
