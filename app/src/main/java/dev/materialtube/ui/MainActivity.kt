@@ -309,7 +309,7 @@ class MainActivity : ComponentActivity() {
                 }
                 composable("home") {
                     TopLevel("MaterialTube") {
-                        val vm = rememberFeedViewModel("home:$signedIn", { Graph.api.homeWithShorts() }, { Graph.api.homeContinuation(it) })
+                        val vm = rememberFeedViewModel("home:$signedIn", { Graph.api.homeWithoutShorts() }, { Graph.api.homeContinuationWithoutShorts(it) })
                         FeedList(
                             vm, openVideo, openChannel,
                             onShorts = openShorts,

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+- Home has no Shorts any more (they weren't personal). Shorts are still in search, channels
+  and subscriptions.
+
 ## 0.7.0
 - **Home Shorts from your account**: Shorts rows now come from your own recommendations (the
   Shorts in your web home feed, then YouTube's personal Shorts sequence). Searches are only a

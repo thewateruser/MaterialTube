@@ -115,6 +115,14 @@ class InnerTube(
         return homeShorts.mix(home())
     }
 
+    /** Home feed with no Shorts at all (they weren't personal enough to be worth showing). */
+    fun homeWithoutShorts(): FeedPage = home().withoutShorts()
+
+    fun homeContinuationWithoutShorts(token: String): FeedPage = continuation(token).withoutShorts()
+
+    private fun FeedPage.withoutShorts() =
+        copy(shelves = shelves.map { s -> s.copy(items = s.items.filter { !it.isShort }) }.filter { it.items.isNotEmpty() })
+
     /** Next home page, with more Shorts rows mixed in. */
     fun homeContinuation(token: String): FeedPage = homeShorts.mix(continuation(token))
 
