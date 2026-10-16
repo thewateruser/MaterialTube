@@ -10,6 +10,8 @@ import org.json.JSONObject
 /** Parses YouTube Music (WEB_REMIX) responses. Tolerant: unknown shapes are skipped. */
 object MusicParser {
 
+    private val TIME = Regex("""\d{1,2}:\d{2}(:\d{2})?""")
+
     private val SHELF_KEYS = listOf(
         "musicCarouselShelfRenderer", "musicShelfRenderer", "musicPlaylistShelfRenderer",
         "musicImmersiveCarouselShelfRenderer", "gridRenderer", "musicCardShelfRenderer",
@@ -121,9 +123,15 @@ object MusicParser {
         val columns = r.arr("flexColumns")?.objects().orEmpty().map { it.obj("musicResponsiveListItemFlexColumnRenderer")?.obj("text") }
         val title = columns.getOrNull(0)?.let { text(it) } ?: return null
         val otherRuns = columns.drop(1).flatMap { it?.arr("runs")?.objects().orEmpty() }
-        val subtitle = columns.drop(1).mapNotNull { c -> c?.let { text(it) } }.filter { it.isNotBlank() }.joinToString(" • ").ifEmpty { null }
+        var parts = columns.drop(1).mapNotNull { c -> c?.let { text(it) } }
+            .flatMap { it.split(" • ") }.map { it.trim() }.filter { it.isNotBlank() }
+        // Search results put the length in the subtitle ("Song • Artist • Album • 4:08").
+        val inlineDuration = parts.lastOrNull { TIME.matches(it) }
+        if (inlineDuration != null) parts = parts - inlineDuration
+        val subtitle = parts.joinToString(" • ").ifEmpty { null }
         val duration = r.arr("fixedColumns")?.objects()?.firstOrNull()
             ?.obj("musicResponsiveListItemFixedColumnRenderer")?.let { text(it.opt("text")) }
+            ?: inlineDuration
         val thumb = thumbnail(r)
         val videoId = r.obj("playlistItemData")?.str("videoId")
             ?: findFirst(r.opt("overlay")) { it.has("watchEndpoint") }?.obj("watchEndpoint")?.str("videoId")
