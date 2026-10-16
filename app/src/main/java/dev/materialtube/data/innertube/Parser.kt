@@ -632,14 +632,17 @@ object Parser {
                 }
                 return@walk false
             }
-            node.obj("gridPlaylistRenderer")?.let { g ->
+            (node.obj("gridPlaylistRenderer") ?: node.obj("playlistRenderer"))?.let { g ->
                 val id = g.str("playlistId")
                 val title = text(g.opt("title"))
                 if (id != null && title != null && id !in out) {
                     out[id] = dev.materialtube.data.MusicItem(
                         id = "VL$id", type = dev.materialtube.data.MusicType.Album, title = title,
-                        subtitle = text(g.opt("publishedTimeText")) ?: text(g.opt("videoCountShortText")),
-                        thumbnail = bestThumb(g.obj("thumbnail")) ?: findFirst(g.opt("thumbnailRenderer")) { it.has("thumbnails") }?.let { bestThumb(it) },
+                        subtitle = text(g.opt("publishedTimeText")) ?: text(g.opt("videoCountShortText"))
+                            ?: text(g.opt("videoCountText")),
+                        thumbnail = bestThumb(g.obj("thumbnail"))
+                            ?: findFirst(g.opt("thumbnailRenderer")) { it.has("thumbnails") }?.let { bestThumb(it) }
+                            ?: g.arr("thumbnails")?.objects()?.firstOrNull()?.let { bestThumb(it) },
                         playlistId = id,
                     )
                 }

@@ -24,7 +24,11 @@ class LiveMusicTest {
         val page = music.home()
         println("MUSIC HOME ${page.describe()} next=${page.continuation != null}")
         assertTrue(page.shelves.size >= 2)
-        page.continuation?.let { println("MUSIC HOME MORE ${music.more(it).describe()}") }
+        page.continuation?.let {
+            val more = music.more(it)
+            println("MUSIC HOME MORE ${more.describe()}")
+            assertTrue(more.shelves.isNotEmpty())
+        }
     }
 
     @Test
@@ -38,7 +42,7 @@ class LiveMusicTest {
     fun searchAlbumArtistAndRadio() {
         val all = music.search("daft punk")
         println("MUSIC SEARCH ALL ${all.describe()}")
-        assertTrue(all.shelves.isNotEmpty())
+        assertTrue(all.shelves.size >= 3)
 
         val songs = music.search("daft punk get lucky", MusicSearchFilter.Songs).shelves.flatMap { it.items }
         println("MUSIC SONGS ${songs.take(3).map { "${it.type} ${it.title} / ${it.artists.map { a -> a.name }} ${it.duration}" }}")

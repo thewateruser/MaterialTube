@@ -40,6 +40,13 @@ object MusicParser {
             }
             false
         }
+        // Newer search layouts list results as loose items (one per section), not in shelves:
+        // group those by kind.
+        val inShelves = shelves.flatMap { it.items }.map { it.id }.toHashSet()
+        val loose = items(root.opt("contents")).filter { it.id !in inShelves }
+        if (loose.isNotEmpty() && shelves.sumOf { it.items.size } < loose.size) {
+            loose.groupBy { groupTitle(it.type) }.forEach { (title, list) -> shelves += MusicShelf(title, list) }
+        }
         val header = header(root)
         return MusicPage(
             shelves = shelves,
@@ -50,6 +57,15 @@ object MusicParser {
             thumbnail = header?.thumbnail,
             playlistId = header?.playlistId,
         )
+    }
+
+    private fun groupTitle(type: MusicType) = when (type) {
+        MusicType.Song -> "Songs"
+        MusicType.Video -> "Videos"
+        MusicType.Album, MusicType.Single, MusicType.EP -> "Albums"
+        MusicType.Artist -> "Artists"
+        MusicType.Playlist -> "Playlists"
+        MusicType.Unknown -> "More"
     }
 
     private fun shelfTitle(shelf: JSONObject): String? =

@@ -423,8 +423,18 @@ class InnerTube(
         return JSONObject().put("client", c).put("user", JSONObject().put("lockedSafetyMode", false))
     }
 
-    fun call(endpoint: String, body: JSONObject, client: Client = TV, withAuth: Boolean = true): JSONObject {
-        body.put("context", context(client))
+    /**
+     * [visitorData] ties a request to an earlier response's session (YouTube Music only serves
+     * continuations to the visitor that got the first page).
+     */
+    fun call(
+        endpoint: String,
+        body: JSONObject,
+        client: Client = TV,
+        withAuth: Boolean = true,
+        visitorData: String? = null,
+    ): JSONObject {
+        body.put("context", context(client).also { c -> visitorData?.let { c.getJSONObject("client").put("visitorData", it) } })
         val token = if (withAuth) auth?.accessToken() else null
         return try {
             execute(endpoint, body, client, token)

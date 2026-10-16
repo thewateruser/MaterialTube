@@ -12,27 +12,45 @@ import org.json.JSONObject
  */
 class MusicApi(private val api: InnerTube) {
 
+    /**
+     * The visitor session and sign-in state of the last first-page request. YouTube Music only
+     * serves continuations to the same visitor, so "more" requests reuse them.
+     */
+    @Volatile private var visitorData: String? = null
+    @Volatile private var lastSignedIn = false
+
+    private fun raw(endpoint: String, body: JSONObject, withAuth: Boolean): JSONObject {
+        val r = api.call(endpoint, body, InnerTube.MUSIC, withAuth, visitorData)
+        r.obj("responseContext")?.str("visitorData")?.let { visitorData = it }
+        return r
+    }
+
     private fun call(endpoint: String, body: JSONObject): JSONObject {
         if (api.isSignedIn) {
-            runCatching { return api.call(endpoint, body, InnerTube.MUSIC, withAuth = true) }
+            runCatching { return raw(endpoint, body, withAuth = true).also { lastSignedIn = true } }
                 .onFailure { if (it !is InnerTubeException) throw it }
         }
-        return api.call(endpoint, JSONObject(body.toString()), InnerTube.MUSIC, withAuth = false)
+        return raw(endpoint, JSONObject(body.toString()), withAuth = false).also { lastSignedIn = false }
     }
 
     private fun browse(browseId: String, params: String? = null): MusicPage {
         fun body() = JSONObject().put("browseId", browseId).also { b -> params?.let { b.put("params", it) } }
         if (api.isSignedIn) {
             // An accepted-but-empty signed-in answer also falls back to the signed-out page.
-            runCatching { MusicParser.page(api.call("browse", body(), InnerTube.MUSIC, withAuth = true)) }
-                .getOrNull()?.takeIf { it.shelves.isNotEmpty() }?.let { return it }
+            runCatching { MusicParser.page(raw("browse", body(), withAuth = true)) }
+                .getOrNull()?.takeIf { it.shelves.isNotEmpty() }?.let { lastSignedIn = true; return it }
         }
-        return MusicParser.page(api.call("browse", body(), InnerTube.MUSIC, withAuth = false))
+        lastSignedIn = false
+        return MusicParser.page(raw("browse", body(), withAuth = false))
     }
 
     /** Next page of any browse result (home, explore, long playlists). */
-    fun more(token: String): MusicPage =
-        MusicParser.page(call("browse?ctoken=$token&continuation=$token&type=next", JSONObject()))
+    fun more(token: String): MusicPage {
+        val viaQuery = runCatching { MusicParser.page(raw("browse?ctoken=$token&continuation=$token&type=next", JSONObject(), lastSignedIn)) }
+            .getOrNull()
+        if (viaQuery != null && viaQuery.shelves.isNotEmpty()) return viaQuery
+        return MusicParser.page(raw("browse", JSONObject().put("continuation", token), lastSignedIn))
+    }
 
     fun home(): MusicPage = browse("FEmusic_home")
 
@@ -48,8 +66,12 @@ class MusicApi(private val api: InnerTube) {
         return MusicParser.page(call("search", body))
     }
 
-    fun searchMore(token: String): MusicPage =
-        MusicParser.page(call("search?ctoken=$token&continuation=$token&type=next", JSONObject()))
+    fun searchMore(token: String): MusicPage {
+        val viaQuery = runCatching { MusicParser.page(raw("search?ctoken=$token&continuation=$token&type=next", JSONObject(), lastSignedIn)) }
+            .getOrNull()
+        if (viaQuery != null && viaQuery.shelves.isNotEmpty()) return viaQuery
+        return MusicParser.page(raw("search", JSONObject().put("continuation", token), lastSignedIn))
+    }
 
     /** Album (MPREb_…), playlist (VL…) or artist (UC…) page, or a shelf's "more" page. */
     fun page(browseId: String, params: String? = null): MusicPage = browse(browseId, params)
