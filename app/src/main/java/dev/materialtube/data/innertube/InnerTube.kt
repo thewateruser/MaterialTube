@@ -33,6 +33,8 @@ class InnerTube(
 ) {
     @Volatile private var workingHost = 0
 
+    val isSignedIn get() = auth?.isSignedIn == true
+
     fun home(): FeedPage {
         // The TV app calls its home "default"; fall back to the web id if that ever goes away.
         val page = Parser.feed(call("browse", JSONObject().put("browseId", "default")))
@@ -267,6 +269,17 @@ class InnerTube(
         return page
     }
 
+    /** Titles of the channel's tabs on the web (e.g. "Releases" for musicians). */
+    fun channelTabTitles(channelId: String): Set<String> = Parser.channelTabs(webChannelPage(channelId)).keys
+
+    /** A musician channel's Releases tab: albums, singles and EPs (as playlists). */
+    fun channelReleases(channelId: String): List<dev.materialtube.data.MusicItem> {
+        val tabs = Parser.channelTabs(webChannelPage(channelId))
+        val params = tabs["Releases"] ?: tabs.entries.firstOrNull { it.key.contains("release", true) }?.value
+            ?: return emptyList()
+        return Parser.releases(call("browse", JSONObject().put("browseId", channelId).put("params", params), WEB, withAuth = false))
+    }
+
     /** Community posts. Empty when the channel has no Posts tab. */
     fun channelPosts(channelId: String): dev.materialtube.data.PostsPage {
         val tabs = Parser.channelTabs(webChannelPage(channelId))
@@ -423,6 +436,18 @@ class InnerTube(
     }
 
     private fun execute(endpoint: String, body: JSONObject, client: Client, token: String?): JSONObject {
+        client.hosts?.let { own ->
+            var lastError: java.io.IOException? = null
+            for (host in own) {
+                try {
+                    return execute(host, endpoint, body, client, token)
+                } catch (e: java.io.IOException) {
+                    if (e is InnerTubeException || !e.isUnreachable()) throw e
+                    lastError = e
+                }
+            }
+            throw lastError ?: InnerTubeException("No host reachable for ${client.name}")
+        }
         var lastError: java.io.IOException? = null
         for (i in hosts.indices) {
             val index = (workingHost + i) % hosts.size
@@ -438,10 +463,11 @@ class InnerTube(
 
     private fun execute(host: String, endpoint: String, body: JSONObject, client: Client, token: String?): JSONObject {
         val request = Request.Builder()
-            .url("https://$host/youtubei/v1/$endpoint?prettyPrint=false")
+            .url("https://$host/youtubei/v1/$endpoint${if ('?' in endpoint) "&" else "?"}prettyPrint=false")
             .post(body.toString().toRequestBody(JSON))
             .header("User-Agent", client.userAgent)
-            .header("Origin", "https://www.youtube.com")
+            .header("Origin", client.origin)
+            .header("Referer", client.origin + "/")
             .header("X-YouTube-Client-Name", client.id)
             .header("X-YouTube-Client-Version", client.version)
             .apply { if (token != null) header("Authorization", "Bearer $token") }
@@ -463,6 +489,9 @@ class InnerTube(
         val version: String,
         val userAgent: String,
         val extra: Map<String, Any> = emptyMap(),
+        /** Hosts for this client (null: the default InnerTube hosts). */
+        val hosts: List<String>? = null,
+        val origin: String = "https://www.youtube.com",
     )
 
     companion object {
@@ -478,6 +507,14 @@ class InnerTube(
         val WEB = Client(
             "WEB", "1", "2.20251010.00.00",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
+        )
+
+        /** YouTube Music's web client. */
+        val MUSIC = Client(
+            "WEB_REMIX", "67", "1.20261006.01.00",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
+            hosts = listOf("music.youtube.com", "youtubei.googleapis.com"),
+            origin = "https://music.youtube.com",
         )
 
         /** Clients that currently return playback tracking from the player endpoint. */

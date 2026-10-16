@@ -606,4 +606,47 @@ object Parser {
             ?: root.str("continuation")
         return FeedPage(if (items.isEmpty()) emptyList() else listOf(Shelf("Shorts", items.values.toList())), next)
     }
+
+    /** Albums/singles from a channel's Releases tab (playlist lockups). */
+    fun releases(root: JSONObject): List<dev.materialtube.data.MusicItem> {
+        val out = LinkedHashMap<String, dev.materialtube.data.MusicItem>()
+        walk(root) { node ->
+            node.obj("lockupViewModel")?.let { l ->
+                val type = l.str("contentType").orEmpty()
+                if ("PLAYLIST" in type || "ALBUM" in type || "PODCAST" in type) {
+                    val id = l.str("contentId")
+                    val meta = l.obj("metadata", "lockupMetadataViewModel")
+                    val title = text(meta?.opt("title"))
+                    if (id != null && title != null && id !in out) {
+                        var thumb: String? = null
+                        walk(l.opt("contentImage")) { n -> if (thumb == null) thumb = bestThumb(n.obj("image")); thumb == null }
+                        val sub = meta?.obj("metadata")?.let { m ->
+                            findFirst(m) { it.has("metadataParts") }?.arr("metadataParts")?.objects()
+                                ?.mapNotNull { text(it.opt("text")) }?.joinToString(" • ")
+                        }
+                        out[id] = dev.materialtube.data.MusicItem(
+                            id = "VL$id", type = dev.materialtube.data.MusicType.Album, title = title,
+                            subtitle = sub, thumbnail = thumb, playlistId = id,
+                        )
+                    }
+                }
+                return@walk false
+            }
+            node.obj("gridPlaylistRenderer")?.let { g ->
+                val id = g.str("playlistId")
+                val title = text(g.opt("title"))
+                if (id != null && title != null && id !in out) {
+                    out[id] = dev.materialtube.data.MusicItem(
+                        id = "VL$id", type = dev.materialtube.data.MusicType.Album, title = title,
+                        subtitle = text(g.opt("publishedTimeText")) ?: text(g.opt("videoCountShortText")),
+                        thumbnail = bestThumb(g.obj("thumbnail")) ?: findFirst(g.opt("thumbnailRenderer")) { it.has("thumbnails") }?.let { bestThumb(it) },
+                        playlistId = id,
+                    )
+                }
+                return@walk false
+            }
+            true
+        }
+        return out.values.toList()
+    }
 }
