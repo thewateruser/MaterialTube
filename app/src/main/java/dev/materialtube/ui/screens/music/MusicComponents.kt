@@ -132,6 +132,13 @@ enum class MusicLayout {
     List,
 }
 
+/** The item a page was opened from, so its header can show something while/if YouTube doesn't. */
+object MusicHints {
+    private val items = java.util.concurrent.ConcurrentHashMap<String, MusicItem>()
+    fun put(item: MusicItem) { items[item.id] = item }
+    fun get(id: String): MusicItem? = items[id]
+}
+
 /** What happens when an item is tapped: songs play (with the shelf as the queue), pages open. */
 class MusicActions(
     val openPage: (browseId: String, params: String?) -> Unit,
@@ -142,6 +149,7 @@ class MusicActions(
         if (item.type.playable) {
             PlayerController.playMusic(list, index, playlistId)
         } else {
+            MusicHints.put(item)
             openPage(item.id, null)
         }
     }

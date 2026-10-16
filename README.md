@@ -64,6 +64,12 @@ Google's API hostnames (`oauth2.googleapis.com`, `youtubei.googleapis.com`).
   anywhere and pinch to resize.
 - Opens YouTube links and "Share → MaterialTube".
 
+## Music
+
+A Music tab built on YouTube Music: personalised home, explore, search, library, album/artist
+pages, audio-only playback with radio and an up-next queue, and a Releases tab on musicians'
+channels.
+
 ## Design
 
 Built with Compose Material 3 Expressive:

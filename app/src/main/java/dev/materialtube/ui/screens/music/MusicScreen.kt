@@ -220,7 +220,22 @@ fun MusicCollectionScreen(browseId: String, params: String?, actions: MusicActio
         vm,
         MusicLayout.Page,
         actions,
-        header = { vm.page?.let { CollectionHeader(it, artist, actions) } },
+        header = {
+            vm.page?.let { p ->
+                // Some pages (e.g. releases opened from a channel) come without a header.
+                val hint = MusicHints.get(browseId)
+                CollectionHeader(
+                    p.copy(
+                        title = p.title ?: hint?.title,
+                        subtitle = p.subtitle ?: hint?.subtitle,
+                        thumbnail = p.thumbnail ?: hint?.thumbnail,
+                        playlistId = p.playlistId ?: hint?.playlistId,
+                    ),
+                    artist,
+                    actions,
+                )
+            }
+        },
     )
 }
 

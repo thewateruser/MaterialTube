@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.0 — Music
+- **Music tab** (YouTube Music): Home with your music recommendations, Explore (new albums and
+  singles, trending, new music videos), Search (all, songs, videos, albums, artists, playlists)
+  and Library (liked music, playlists, albums, artists).
+- **Album, playlist and artist pages** with Play and Shuffle; artist pages have top songs,
+  albums, singles, videos and similar artists.
+- **Music player**: plays audio only (saves data), keeps going with YouTube Music's radio or the
+  rest of the album/playlist, Now Playing screen with seek bar and an up-next queue, next/previous
+  in the notification and lock screen, mini player with artwork. "Watch the video" switches to
+  the video.
+- **Releases tab** on musicians' channel pages (albums, singles, EPs).
+
 ## 0.7.1
 - Home has no Shorts any more (they weren't personal). Shorts are still in search, channels
   and subscriptions.

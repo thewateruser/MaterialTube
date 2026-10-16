@@ -295,7 +295,10 @@ private fun ReleasesList(vm: ReleasesViewModel, header: @Composable () -> Unit, 
                 ) {
                     row.forEach { release ->
                         Box(Modifier.weight(1f)) {
-                            ReleaseCard(release) { actions.openPage(release.id, null) }
+                            ReleaseCard(release) {
+                                dev.materialtube.ui.screens.music.MusicHints.put(release)
+                                actions.openPage(release.id, null)
+                            }
                         }
                     }
                     if (row.size == 1) Spacer(Modifier.weight(1f))
