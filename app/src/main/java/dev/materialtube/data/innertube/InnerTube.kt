@@ -527,6 +527,22 @@ class InnerTube(
             origin = "https://music.youtube.com",
         )
 
+        /** YouTube Music's Android and iOS apps: they authenticate with OAuth bearer tokens. */
+        val MUSIC_ANDROID = Client(
+            "ANDROID_MUSIC", "21", "7.27.52",
+            "com.google.android.apps.youtube.music/7.27.52 (Linux; U; Android 14) gzip",
+            mapOf("androidSdkVersion" to 34, "osName" to "Android", "osVersion" to "14"),
+            hosts = listOf("music.youtube.com", "youtubei.googleapis.com"),
+            origin = "https://music.youtube.com",
+        )
+        val MUSIC_IOS = Client(
+            "IOS_MUSIC", "26", "7.27.0",
+            "com.google.ios.youtubemusic/7.27.0 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+            mapOf("deviceMake" to "Apple", "deviceModel" to "iPhone16,2", "osName" to "iPhone", "osVersion" to "18.3.2.22D82"),
+            hosts = listOf("music.youtube.com", "youtubei.googleapis.com"),
+            origin = "https://music.youtube.com",
+        )
+
         /** Clients that currently return playback tracking from the player endpoint. */
         val PLAYER_CLIENTS = listOf(
             TV,

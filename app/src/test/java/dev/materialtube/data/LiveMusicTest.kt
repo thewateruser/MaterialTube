@@ -82,4 +82,15 @@ class LiveMusicTest {
         println("RELEASE PAGE ${page.title} tracks=${page.shelves.firstOrNull()?.items?.size}")
         assertTrue(page.shelves.flatMap { it.items }.isNotEmpty())
     }
+
+    /** The Android/iOS Music clients must parse too (they're used when they accept the account). */
+    @Test
+    fun otherMusicClientsParse() {
+        for (client in listOf(InnerTube.MUSIC_ANDROID, InnerTube.MUSIC_IOS)) {
+            val r = runCatching { api.call("browse", org.json.JSONObject().put("browseId", "FEmusic_home"), client, withAuth = false) }
+            val page = r.getOrNull()?.let { dev.materialtube.data.innertube.MusicParser.page(it) }
+            println("MUSIC CLIENT ${client.name}: ${r.exceptionOrNull()?.message ?: page?.describe()}")
+        }
+        println(music.diagnostics())
+    }
 }

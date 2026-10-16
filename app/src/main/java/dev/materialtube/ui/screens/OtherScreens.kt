@@ -189,13 +189,14 @@ fun SettingsScreen(onSignIn: () -> Unit) {
             var copying by remember { mutableStateOf(false) }
             ListItem(
                 headlineContent = { Text(if (copying) "Collecting…" else "Copy diagnostics") },
-                supportingContent = { Text("Copies what YouTube returns for your subscriptions and Shorts, to paste into a bug report") },
+                supportingContent = { Text("Copies what YouTube returns for your subscriptions, Shorts and Music, to paste into a bug report") },
                 leadingContent = { Icon(Icons.Filled.BugReport, null) },
                 modifier = Modifier.bounceClick(enabled = !copying, pressedScale = 0.97f) {
                     copying = true
                     scope.launch {
                         val report = withContext(Dispatchers.IO) {
-                            runCatching { Graph.api.subscriptionsDiagnostics() }.getOrElse { "failed: ${it.message}" }
+                            runCatching { Graph.api.subscriptionsDiagnostics() }.getOrElse { "failed: ${it.message}" } +
+                                "\n" + runCatching { Graph.music.diagnostics() }.getOrElse { "music failed: ${it.message}" }
                         }
                         val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
                         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MaterialTube diagnostics", report))
