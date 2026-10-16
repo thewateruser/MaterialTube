@@ -31,7 +31,7 @@ class LiveTvMusicProbeTest {
                 println(
                     "TVPROBE $id: shelves=${feed.shelves.map { "${it.title}:${it.items.size}" }.take(8)} " +
                         "first=${feed.shelves.firstOrNull()?.items?.firstOrNull()?.title} " +
-                        "playlists=${Regex("\\"contentType\\":\\"[A-Z_]*PLAYLIST[A-Z_]*\\"").findAll(text).count()} " +
+                        "playlists=${Regex("PLAYLIST").findAll(text).count()} " +
                         "len=${text.length}",
                 )
             }
