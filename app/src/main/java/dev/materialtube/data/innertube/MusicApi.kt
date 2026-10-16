@@ -1,6 +1,8 @@
 package dev.materialtube.data.innertube
 
 import dev.materialtube.data.MusicItem
+import dev.materialtube.data.MusicShelf
+import dev.materialtube.data.MusicType
 import dev.materialtube.data.MusicPage
 import dev.materialtube.data.MusicSearchFilter
 import org.json.JSONObject
@@ -22,9 +24,20 @@ class MusicApi(private val api: InnerTube) {
     @Volatile private var lastClient: InnerTube.Client = InnerTube.MUSIC
     @Volatile private var lastSignedIn = false
 
-    private fun raw(endpoint: String, body: JSONObject, client: InnerTube.Client, withAuth: Boolean): JSONObject {
-        val r = api.call(endpoint, body, client, withAuth, visitorData)
-        r.obj("responseContext")?.str("visitorData")?.let { visitorData = it }
+    /** The visitor session each continuation belongs to (requests run in parallel). */
+    private val visitorFor = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private fun raw(
+        endpoint: String,
+        body: JSONObject,
+        client: InnerTube.Client,
+        withAuth: Boolean,
+        visitor: String? = visitorData,
+    ): JSONObject {
+        val r = api.call(endpoint, body, client, withAuth, visitor)
+        val v = r.obj("responseContext")?.str("visitorData")
+        v?.let { visitorData = it }
+        if (v != null) MusicParser.continuation(r)?.let { visitorFor[it] = v }
         return r
     }
 
@@ -66,10 +79,10 @@ class MusicApi(private val api: InnerTube) {
 
     private fun continued(endpoint: String, token: String): MusicPage {
         val viaQuery = runCatching {
-            MusicParser.page(raw("$endpoint?ctoken=$token&continuation=$token&type=next", JSONObject(), lastClient, lastSignedIn))
+            MusicParser.page(raw("$endpoint?ctoken=$token&continuation=$token&type=next", JSONObject(), lastClient, lastSignedIn, visitorFor[token] ?: visitorData))
         }.getOrNull()
         if (viaQuery != null && viaQuery.shelves.isNotEmpty()) return viaQuery
-        return MusicParser.page(raw(endpoint, JSONObject().put("continuation", token), lastClient, lastSignedIn))
+        return MusicParser.page(raw(endpoint, JSONObject().put("continuation", token), lastClient, lastSignedIn, visitorFor[token] ?: visitorData))
     }
 
     /** Next page of any browse result (home, explore, long playlists, TV pages). */
@@ -85,13 +98,84 @@ class MusicApi(private val api: InnerTube) {
      * Music's general home. Signed out: just the general home.
      */
     fun home(): MusicPage {
-        val general = browse("FEmusic_home")
-        if (!api.isSignedIn) return general
-        val personal = runCatching { tv("FEtopics_music") }.getOrNull()?.shelves.orEmpty()
-        return general.copy(shelves = personal + general.shelves)
+        if (!api.isSignedIn) return browse("FEmusic_home")
+        val general = pool.submit<MusicPage?> { runCatching { browse("FEmusic_home") }.getOrNull() }
+        val personal = personalHome()
+        val g = general.get()
+        val shelves = personal + g?.shelves.orEmpty()
+        if (shelves.isEmpty()) return browse("FEmusic_home")
+        return MusicPage(shelves, g?.continuation)
     }
 
-    fun explore(): MusicPage = browse("FEmusic_explore")
+    /** Requests for the personal pages run side by side. */
+    private val pool = java.util.concurrent.Executors.newFixedThreadPool(6) { r -> Thread(r, "music").apply { isDaemon = true } }
+
+    private fun <T> async(block: () -> T): java.util.concurrent.Future<T?> = pool.submit<T?> { runCatching(block).getOrNull() }
+
+    /** Songs the account liked in YouTube Music (newest first), through the TV client. */
+    private fun likedSongs(): List<MusicItem> =
+        tv("FEmusic_liked_videos").shelves.flatMap { it.items }.filter { it.type.playable }
+
+    /** A personal queue through the TV client's `next` (e.g. "RDMM", the account's Supermix). */
+    private fun tvMix(playlistId: String, seed: String?): List<MusicItem> {
+        val body = JSONObject().put("playlistId", playlistId)
+        seed?.let { body.put("videoId", it) }
+        return Parser.tvMusic(api.call("next", body, InnerTube.TV, withAuth = true)).shelves
+            .flatMap { it.items }.filter { it.type.playable }
+    }
+
+    /**
+     * The account's own music home, built from what the TV client gives this account: its
+     * Supermix, its liked songs, its personal radio for them and the mixes on its home feed.
+     */
+    private fun personalHome(): List<MusicShelf> {
+        val liked = likedSongs()
+        val seed = liked.firstOrNull()?.id
+        val supermix = async { tvMix("RDMM", seed) }
+        val mixes = async {
+            Parser.tvMusic(api.call("browse", JSONObject().put("browseId", "default"), InnerTube.TV, withAuth = true))
+                .shelves.flatMap { it.items }
+                .filter { it.type == MusicType.Playlist && (it.id.startsWith("VLRD") || it.title.contains("mix", ignoreCase = true)) }
+        }
+        val radios = liked.take(3).map { song -> song to async { tvRadio(song.id).first } }
+        val out = mutableListOf<MusicShelf>()
+        supermix.get()?.takeIf { it.size >= 4 }?.let { out += MusicShelf("Quick picks", it.take(24)) }
+        if (liked.isNotEmpty()) out += MusicShelf("Listen again", liked.take(16))
+        mixes.get()?.takeIf { it.isNotEmpty() }?.let { out += MusicShelf("Your mixes", it.distinctBy { m -> m.id }) }
+        radios.forEach { (song, radio) ->
+            radio.get()?.filter { it.id != song.id }?.takeIf { it.size >= 4 }?.let {
+                out += MusicShelf("Because you like ${song.title}", it.take(16))
+            }
+        }
+        return out
+    }
+
+    /** New singles and albums from the artists in the account's liked music. */
+    private fun personalExplore(): List<MusicShelf> {
+        val artists = likedSongs().flatMap { it.artists }.filter { it.id != null }.distinctBy { it.id }.take(8)
+        val pages = artists.map { a -> a to async { browse(a.id!!) } }
+        val releases = mutableListOf<MusicItem>()
+        val artistCards = mutableListOf<MusicItem>()
+        pages.forEach { (artist, future) ->
+            val page = future.get() ?: return@forEach
+            artistCards += MusicItem(artist.id!!, MusicType.Artist, page.title ?: artist.name, thumbnail = page.thumbnail)
+            val singles = page.shelves.firstOrNull { it.title?.contains("Single", true) == true }?.items.orEmpty()
+            val albums = page.shelves.firstOrNull { it.title?.startsWith("Album", true) == true }?.items.orEmpty()
+            releases += (singles.take(2) + albums.take(1)).filter { it.type.isRelease }
+        }
+        return listOfNotNull(
+            releases.distinctBy { it.id }.takeIf { it.isNotEmpty() }?.let { MusicShelf("New from artists you like", it) },
+            artistCards.takeIf { it.isNotEmpty() }?.let { MusicShelf("Artists you listen to", it) },
+        )
+    }
+
+    fun explore(): MusicPage {
+        if (!api.isSignedIn) return browse("FEmusic_explore")
+        val general = async { browse("FEmusic_explore") }
+        val personal = runCatching { personalExplore() }.getOrDefault(emptyList())
+        val g = general.get()
+        return MusicPage(personal + g?.shelves.orEmpty(), g?.continuation)
+    }
 
     fun newReleases(): MusicPage = browse("FEmusic_new_releases_albums")
 
@@ -188,6 +272,18 @@ class MusicApi(private val api: InnerTube) {
                 }
                 append('\n')
             }
+        }
+        if (api.isSignedIn) {
+            append("personal home: ")
+            runCatching { personalHome() }.onFailure { append("error ").append(it.message) }
+                .onSuccess { sh -> append(sh.map { "${it.title}:${it.items.size}" }) }
+            append("\nsupermix: ")
+            runCatching { tvMix("RDMM", likedSongs().firstOrNull()?.id) }.onFailure { append("error ").append(it.message) }
+                .onSuccess { append(it.size).append(" songs ").append(it.take(3).map { m -> m.title }) }
+            append("\npersonal explore: ")
+            runCatching { personalExplore() }.onFailure { append("error ").append(it.message) }
+                .onSuccess { sh -> append(sh.map { "${it.title}:${it.items.size}" }) }
+            append('\n')
         }
         for ((label, id) in listOf("TV music" to "FEtopics_music", "TV liked music" to "FEmusic_liked_videos", "TV playlists" to "FEplaylist_aggregation", "TV library" to "FEmusic_library_landing")) {
             append(label).append(": ")

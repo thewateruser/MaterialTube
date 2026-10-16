@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.3
+- **Personal Music Home**: Quick picks from your Supermix, Listen again (your liked songs),
+  "Because you like …" radios for your latest liked songs and your mixes; YouTube Music's
+  general shelves come after.
+- **Personal Explore**: new singles and albums from the artists you like, and those artists;
+  general new releases and trending after.
+
 ## 0.8.2
 - **Your music, through the TV client**: diagnostics showed every YouTube Music client rejects the
   app's (TV) sign-in. Personal music now comes through the TV client, which accepts it:
