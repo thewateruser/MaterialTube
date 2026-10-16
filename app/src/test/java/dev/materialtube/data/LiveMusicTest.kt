@@ -93,4 +93,20 @@ class LiveMusicTest {
         }
         println(music.diagnostics())
     }
+
+    /** The TV client's music page (personal when signed in) parses into shelves with playlists. */
+    @Test
+    fun tvMusicPage() {
+        val page = dev.materialtube.data.innertube.Parser.tvMusic(
+            api.call("browse", org.json.JSONObject().put("browseId", "FEtopics_music"), InnerTube.TV, withAuth = false),
+        )
+        println("TV MUSIC ${page.describe()} next=${page.continuation}")
+        assertTrue(page.shelves.isNotEmpty())
+        val playlist = page.shelves.flatMap { it.items }.firstOrNull { it.type == MusicType.Playlist }
+        println("TV MUSIC playlist=$playlist")
+        assertNotNull(playlist)
+        val opened = music.page(playlist!!.id)
+        println("TV MUSIC playlist page ${opened.title} ${opened.describe()}")
+        assertTrue(opened.shelves.flatMap { it.items }.isNotEmpty())
+    }
 }

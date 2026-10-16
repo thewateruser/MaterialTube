@@ -150,7 +150,7 @@ object Parser {
         return findFirst(section) { it.has("continuationCommand") }?.obj("continuationCommand")?.str("token")
     }
 
-    private fun shelfTitle(shelf: JSONObject): String? =
+    internal fun shelfTitle(shelf: JSONObject): String? =
         text(shelf.opt("title"))
             ?: text(shelf.obj("headerRenderer", "shelfHeaderRenderer")?.opt("title"))
             ?: shelf.obj("header", "gridHeaderRenderer")?.let { text(it.opt("title")) }
@@ -651,5 +651,77 @@ object Parser {
             true
         }
         return out.values.toList()
+    }
+
+    /**
+     * A TV-client page as music: its shelves of video and playlist tiles. Used for the signed-in
+     * account's music (the TV client is the only one the account's sign-in works with).
+     * Continuations are prefixed with "tv:" so MusicApi sends them back to the TV client.
+     */
+    fun tvMusic(root: JSONObject): dev.materialtube.data.MusicPage {
+        val shelves = mutableListOf<dev.materialtube.data.MusicShelf>()
+        val seen = HashSet<String>()
+        fun itemsIn(node: Any?): List<dev.materialtube.data.MusicItem> {
+            val out = mutableListOf<dev.materialtube.data.MusicItem>()
+            walk(node) { n ->
+                val t = n.obj("tileRenderer")
+                if (t != null) {
+                    (tvPlaylist(t) ?: tile(t)?.let(::musicVideo))?.let { if (seen.add(it.id)) out += it }
+                    false
+                } else {
+                    video(n)?.let { v -> if (seen.add(v.id)) out += musicVideo(v); false } ?: true
+                }
+            }
+            return out
+        }
+        walk(root) { node ->
+            val shelf = node.optJSONObject("shelfRenderer") ?: node.optJSONObject("gridRenderer")
+            if (shelf != null) {
+                val items = itemsIn(shelf)
+                if (items.isNotEmpty()) shelves += dev.materialtube.data.MusicShelf(shelfTitle(shelf), items)
+                false
+            } else {
+                true
+            }
+        }
+        val loose = itemsIn(root)
+        if (loose.isNotEmpty()) shelves += dev.materialtube.data.MusicShelf(null, loose)
+        return dev.materialtube.data.MusicPage(shelves, continuation(root)?.let { "tv:$it" })
+    }
+
+    private fun musicVideo(v: VideoItem) = dev.materialtube.data.MusicItem(
+        id = v.id,
+        type = dev.materialtube.data.MusicType.Song,
+        title = v.title,
+        subtitle = v.channel,
+        thumbnail = v.thumbnail,
+        artists = listOfNotNull(v.channel?.let { dev.materialtube.data.MusicArtistRef(it, v.channelId) }),
+        duration = v.duration,
+    )
+
+    /** A TV playlist/mix tile. */
+    private fun tvPlaylist(t: JSONObject): dev.materialtube.data.MusicItem? {
+        val type = t.str("contentType").orEmpty()
+        if ("PLAYLIST" !in type) return null
+        val browse = findFirst(t.opt("onSelectCommand")) { it.has("browseEndpoint") }?.obj("browseEndpoint")?.str("browseId")
+        val playlist = findFirst(t.opt("onSelectCommand")) { it.has("watchPlaylistEndpoint") || it.has("watchEndpoint") }
+            ?.let { it.obj("watchPlaylistEndpoint") ?: it.obj("watchEndpoint") }?.str("playlistId")
+        val id = browse?.takeIf { it.startsWith("VL") }
+            ?: (playlist ?: t.str("contentId"))?.let { "VL$it" }
+            ?: return null
+        val meta = t.obj("metadata", "tileMetadataRenderer")
+        val lines = meta?.arr("lines")?.objects()?.mapNotNull { line ->
+            line.obj("lineRenderer")?.arr("items")?.objects()
+                ?.mapNotNull { text(it.obj("lineItemRenderer")?.opt("text")) }
+                ?.joinToString(" ")?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotEmpty() }
+        }.orEmpty()
+        return dev.materialtube.data.MusicItem(
+            id = id,
+            type = dev.materialtube.data.MusicType.Playlist,
+            title = text(meta?.opt("title")) ?: return null,
+            subtitle = lines.joinToString(" • ").ifEmpty { null },
+            thumbnail = bestThumb(t.obj("header", "tileHeaderRenderer", "thumbnail")),
+            playlistId = id.removePrefix("VL"),
+        )
     }
 }

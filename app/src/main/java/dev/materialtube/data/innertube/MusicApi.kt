@@ -6,18 +6,13 @@ import dev.materialtube.data.MusicSearchFilter
 import org.json.JSONObject
 
 /**
- * YouTube Music. Signed in, requests go through whichever Music client accepts the account
- * (web, Android or iOS app; checked with YouTube's own "logged_in" flag), so Home is your music
- * recommendations. If none does, requests fall back to signed out so the tab still works.
+ * YouTube Music. Its catalogue, search and charts come from YouTube Music's own (signed-out)
+ * client; the account's personal music (recommendations, library, radio) comes through the TV
+ * client, the only one the account's TV sign-in works with.
  */
 class MusicApi(private val api: InnerTube) {
 
     private val accountClients = listOf(InnerTube.MUSIC, InnerTube.MUSIC_ANDROID, InnerTube.MUSIC_IOS)
-
-    /** The client that accepted the account, once known. */
-    @Volatile private var accountClient: InnerTube.Client? = null
-    /** When we last found that no client accepts the account (retried after a while). */
-    @Volatile private var noAccountClientAt = 0L
 
     /**
      * The visitor session, client and sign-in state of the last first-page request. YouTube
@@ -37,24 +32,15 @@ class MusicApi(private val api: InnerTube) {
     private fun loggedIn(r: JSONObject): Boolean? =
         findFirst(r.opt("responseContext")) { it.str("key") == "logged_in" }?.str("value")?.let { it == "1" }
 
-    /** A signed-in request through the first Music client that accepts the account, or null. */
-    private fun signedIn(endpoint: String, body: () -> JSONObject, accept: (JSONObject) -> Boolean = { true }): JSONObject? {
-        if (!api.isSignedIn) return null
-        val known = accountClient
-        val candidates = if (known != null) listOf(known) + (accountClients - known) else {
-            if (System.currentTimeMillis() - noAccountClientAt < 10 * 60_000) return null
-            accountClients
+    private fun rendererCounts(json: Any?, out: MutableMap<String, Int> = sortedMapOf()): Map<String, Int> {
+        when (json) {
+            is JSONObject -> json.keys().forEach { k ->
+                if (k.endsWith("Renderer") || k.endsWith("ViewModel")) out[k] = (out[k] ?: 0) + 1
+                rendererCounts(json.opt(k), out)
+            }
+            is org.json.JSONArray -> for (i in 0 until json.length()) rendererCounts(json.opt(i), out)
         }
-        for (client in candidates) {
-            val r = runCatching { raw(endpoint, body(), client, withAuth = true) }.getOrNull() ?: continue
-            if (loggedIn(r) == false || !accept(r)) continue
-            accountClient = client
-            lastClient = client
-            lastSignedIn = true
-            return r
-        }
-        if (known == null) noAccountClientAt = System.currentTimeMillis()
-        return null
+        return out
     }
 
     private fun signedOut(endpoint: String, body: JSONObject): JSONObject {
@@ -63,17 +49,20 @@ class MusicApi(private val api: InnerTube) {
         return raw(endpoint, body, InnerTube.MUSIC, withAuth = false)
     }
 
-    private fun call(endpoint: String, body: JSONObject): JSONObject {
-        val json = body.toString()
-        return signedIn(endpoint, { JSONObject(json) }) ?: signedOut(endpoint, JSONObject(json))
-    }
+    // The account's sign-in is the TV app's, which YouTube Music's own clients refuse (HTTP 400,
+    // see diagnostics). So YouTube Music itself is used signed out (catalogue, search, charts),
+    // and everything personal comes from the TV client, which does accept the account.
+
+    private fun call(endpoint: String, body: JSONObject): JSONObject = signedOut(endpoint, body)
 
     private fun browse(browseId: String, params: String? = null): MusicPage {
-        fun body() = JSONObject().put("browseId", browseId).also { b -> params?.let { b.put("params", it) } }
-        // An accepted-but-empty signed-in answer also falls back to the signed-out page.
-        signedIn("browse", ::body) { MusicParser.page(it).shelves.isNotEmpty() }?.let { return MusicParser.page(it) }
-        return MusicParser.page(signedOut("browse", body()))
+        val body = JSONObject().put("browseId", browseId).also { b -> params?.let { b.put("params", it) } }
+        return MusicParser.page(signedOut("browse", body))
     }
+
+    /** A page through the TV client, signed in. */
+    private fun tv(browseId: String): MusicPage =
+        Parser.tvMusic(api.call("browse", JSONObject().put("browseId", browseId), InnerTube.TV, withAuth = true))
 
     private fun continued(endpoint: String, token: String): MusicPage {
         val viaQuery = runCatching {
@@ -83,10 +72,24 @@ class MusicApi(private val api: InnerTube) {
         return MusicParser.page(raw(endpoint, JSONObject().put("continuation", token), lastClient, lastSignedIn))
     }
 
-    /** Next page of any browse result (home, explore, long playlists). */
-    fun more(token: String): MusicPage = continued("browse", token)
+    /** Next page of any browse result (home, explore, long playlists, TV pages). */
+    fun more(token: String): MusicPage {
+        if (token.startsWith("tv:")) {
+            return Parser.tvMusic(api.call("browse", JSONObject().put("continuation", token.removePrefix("tv:")), InnerTube.TV, withAuth = true))
+        }
+        return continued("browse", token)
+    }
 
-    fun home(): MusicPage = browse("FEmusic_home")
+    /**
+     * Signed in: the account's own music (the TV app's Music section) first, then YouTube
+     * Music's general home. Signed out: just the general home.
+     */
+    fun home(): MusicPage {
+        val general = browse("FEmusic_home")
+        if (!api.isSignedIn) return general
+        val personal = runCatching { tv("FEtopics_music") }.getOrNull()?.shelves.orEmpty()
+        return general.copy(shelves = personal + general.shelves)
+    }
 
     fun explore(): MusicPage = browse("FEmusic_explore")
 
@@ -102,14 +105,41 @@ class MusicApi(private val api: InnerTube) {
 
     fun searchMore(token: String): MusicPage = continued("search", token)
 
-    /** Album (MPREb_…), playlist (VL…) or artist (UC…) page, or a shelf's "more" page. */
-    fun page(browseId: String, params: String? = null): MusicPage = browse(browseId, params)
+    /**
+     * Album (MPREb_…), playlist (VL…) or artist (UC…) page, or a shelf's "more" page. Private
+     * playlists (yours) aren't visible signed out, so those come through the TV client.
+     */
+    fun page(browseId: String, params: String? = null): MusicPage {
+        val public = runCatching { browse(browseId, params) }
+        public.getOrNull()?.takeIf { it.shelves.isNotEmpty() }?.let { return it }
+        if (api.isSignedIn && params == null) {
+            runCatching { tv(browseId) }.getOrNull()?.takeIf { it.shelves.isNotEmpty() }?.let { return it }
+        }
+        return public.getOrThrow()
+    }
 
     /**
      * The queue that plays after [videoId]: the rest of [playlistId] when given (an album or
      * playlist), otherwise YouTube Music's radio for the song.
      */
     fun queue(videoId: String?, playlistId: String?): Pair<List<MusicItem>, String?> {
+        if (api.isSignedIn && videoId != null && playlistId == null) {
+            runCatching { tvRadio(videoId) }.getOrNull()?.takeIf { it.first.size >= 3 }?.let { return it }
+        }
+        return musicQueue(videoId, playlistId)
+    }
+
+    /**
+     * The account's radio for a song, through the TV client (so it follows your taste). Its
+     * "continuation" is the last song, whose own radio continues the queue.
+     */
+    private fun tvRadio(videoId: String): Pair<List<MusicItem>, String?> {
+        val r = api.call("next", JSONObject().put("videoId", videoId).put("playlistId", "RDAMVM$videoId"), InnerTube.TV, withAuth = true)
+        val items = Parser.tvMusic(r).shelves.flatMap { it.items }.filter { it.type.playable }
+        return items to items.lastOrNull()?.let { "tv:${it.id}" }
+    }
+
+    private fun musicQueue(videoId: String?, playlistId: String?): Pair<List<MusicItem>, String?> {
         val body = JSONObject()
             .put("isAudioOnly", true)
             .put("enablePersistentPlaylistPanel", true)
@@ -120,6 +150,9 @@ class MusicApi(private val api: InnerTube) {
     }
 
     fun queueMore(token: String, playlistId: String): Pair<List<MusicItem>, String?> =
+        if (token.startsWith("tv:")) tvRadio(token.removePrefix("tv:")) else musicQueueMore(token, playlistId)
+
+    private fun musicQueueMore(token: String, playlistId: String): Pair<List<MusicItem>, String?> =
         MusicParser.queue(
             call(
                 "next",
@@ -131,39 +164,10 @@ class MusicApi(private val api: InnerTube) {
     /** Library sections (need sign-in): liked songs, playlists, albums, artists. */
     fun library(section: LibrarySection): MusicPage {
         if (!api.isSignedIn) throw InnerTubeException("Sign in to see your music library")
-        signedIn("browse", { JSONObject().put("browseId", section.browseId) })?.let { r ->
-            val page = MusicParser.page(r)
-            if (page.shelves.isNotEmpty()) return page
-        }
-        // YouTube Music didn't take the account: liked music is also a regular playlist, which
-        // the TV client (the account's own client) can read.
-        if (section == LibrarySection.Liked) {
-            val feed = api.browse("VLLM")
-            val songs = feed.shelves.flatMap { it.items }.map { v ->
-                MusicItem(
-                    id = v.id,
-                    type = dev.materialtube.data.MusicType.Song,
-                    title = v.title,
-                    subtitle = v.channel,
-                    thumbnail = v.thumbnail,
-                    artists = listOfNotNull(v.channel?.let { dev.materialtube.data.MusicArtistRef(it, v.channelId) }),
-                    duration = v.duration,
-                )
-            }
-            return MusicPage(listOf(dev.materialtube.data.MusicShelf(null, songs)), feed.continuation)
-        }
-        throw InnerTubeException("YouTube Music didn't accept your sign-in for this. Settings → Copy diagnostics shows what it returned.")
-    }
-
-    private fun rendererCounts(json: Any?, out: MutableMap<String, Int> = sortedMapOf()): Map<String, Int> {
-        when (json) {
-            is JSONObject -> json.keys().forEach { k ->
-                if (k.endsWith("Renderer") || k.endsWith("ViewModel")) out[k] = (out[k] ?: 0) + 1
-                rendererCounts(json.opt(k), out)
-            }
-            is org.json.JSONArray -> for (i in 0 until json.length()) rendererCounts(json.opt(i), out)
-        }
-        return out
+        val page = tv(section.browseId)
+        if (page.shelves.isNotEmpty() || section != LibrarySection.Liked) return page
+        // No separate liked-music list: liked songs are also in liked videos.
+        return tv("VLLL")
     }
 
     /** What each Music client returns for this account (for Settings → Copy diagnostics). */
@@ -185,12 +189,17 @@ class MusicApi(private val api: InnerTube) {
                 append('\n')
             }
         }
-        append("using: ${accountClient?.name ?: "none"}\n")
+        for ((label, id) in listOf("TV music" to "FEtopics_music", "TV liked music" to "FEmusic_liked_videos", "TV playlists" to "FEplaylist_aggregation", "TV library" to "FEmusic_library_landing")) {
+            append(label).append(": ")
+            runCatching { tv(id) }
+                .onFailure { append("error ").append(it.message) }
+                .onSuccess { p -> append(p.shelves.size).append(" shelves, ").append(p.shelves.sumOf { it.items.size }).append(" items ").append(p.shelves.take(4).map { it.title }) }
+            append('\n')
+        }
     }
     enum class LibrarySection(val label: String, val browseId: String) {
-        Liked("Liked music", "VLLM"),
-        Playlists("Playlists", "FEmusic_liked_playlists"),
-        Albums("Albums", "FEmusic_liked_albums"),
-        Artists("Artists", "FEmusic_library_corpus_track_artists"),
+        Liked("Liked music", "FEmusic_liked_videos"),
+        Playlists("Playlists", "FEplaylist_aggregation"),
+        Library("Library", "FEmusic_library_landing"),
     }
 }

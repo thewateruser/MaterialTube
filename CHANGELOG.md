@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.2
+- **Your music, through the TV client**: diagnostics showed every YouTube Music client rejects the
+  app's (TV) sign-in. Personal music now comes through the TV client, which accepts it:
+  - Music Home starts with your TV music section, then YouTube Music's general shelves.
+  - Library: liked music, your playlists and your library (including private playlists).
+  - Song radio follows your taste.
+- Diagnostics show what each of those returns.
+
 ## 0.8.1
 - **Music sign-in**: YouTube Music's web client didn't accept the app's sign-in, so Music showed
   general recommendations and Library failed. Music now uses whichever YouTube Music client
