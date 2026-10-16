@@ -45,6 +45,7 @@ object Graph {
     val http: OkHttpClient by lazy { FallbackDns.client() }
     val auth by lazy { TvOAuth(http, prefs) }
     val api by lazy { InnerTube(http, auth) }
+    val music by lazy { dev.materialtube.data.innertube.MusicApi(api) }
     val stats by lazy { WatchStats(http, auth) }
     val sponsorBlock by lazy { SponsorBlock(http) }
 

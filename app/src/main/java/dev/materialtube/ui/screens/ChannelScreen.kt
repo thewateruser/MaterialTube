@@ -1,5 +1,14 @@
 package dev.materialtube.ui.screens
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import dev.materialtube.ui.components.CenteredLoading
+import dev.materialtube.ui.components.ErrorState
+import dev.materialtube.ui.components.bounceClick
+import dev.materialtube.ui.screens.music.MusicActions
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -54,6 +63,18 @@ class ChannelHeaderViewModel(private val channelId: String) : ViewModel() {
     var subscribed by mutableStateOf(false)
         private set
 
+    /** Whether the channel has a Releases tab (a musician), checked in the background. */
+    var hasReleases by mutableStateOf(false)
+        private set
+
+    init {
+        viewModelScope.launch {
+            hasReleases = runCatching {
+                withContext(Dispatchers.IO) { Graph.api.channelTabTitles(channelId) }
+            }.getOrDefault(emptySet()).any { it.contains("release", ignoreCase = true) }
+        }
+    }
+
     fun loaded(p: ChannelPage) {
         page = p
         subscribed = p.subscribed == true
@@ -77,7 +98,34 @@ class ChannelHeaderViewModel(private val channelId: String) : ViewModel() {
     }
 }
 
-private val TABS = listOf(ChannelTab.Home, ChannelTab.Videos, ChannelTab.Shorts, ChannelTab.Posts, ChannelTab.About)
+private fun tabsFor(releases: Boolean) = listOfNotNull(
+    ChannelTab.Home, ChannelTab.Videos, ChannelTab.Shorts,
+    ChannelTab.Releases.takeIf { releases },
+    ChannelTab.Posts, ChannelTab.About,
+)
+
+/** A musician's albums and singles. */
+class ReleasesViewModel(private val channelId: String) : ViewModel() {
+    var releases by mutableStateOf<List<dev.materialtube.data.MusicItem>?>(null)
+        private set
+    var error by mutableStateOf<String?>(null)
+        private set
+
+    init { load() }
+
+    fun load() {
+        error = null
+        viewModelScope.launch {
+            try {
+                releases = withContext(Dispatchers.IO) { Graph.api.channelReleases(channelId) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = e.message ?: "Couldn't load releases"
+            }
+        }
+    }
+}
 
 @Composable
 fun ChannelScreen(
@@ -85,10 +133,13 @@ fun ChannelScreen(
     onVideo: (VideoItem) -> Unit,
     onChannel: (String) -> Unit,
     onShorts: (List<VideoItem>, Int) -> Unit,
+    musicActions: MusicActions,
 ) {
     val header: ChannelHeaderViewModel = viewModel(key = "channel-header:$channelId") { ChannelHeaderViewModel(channelId) }
-    var tab by rememberSaveable { mutableStateOf(0) }
-    val selected = TABS[tab]
+    val tabs = tabsFor(header.hasReleases)
+    var selectedTab by rememberSaveable { mutableStateOf(ChannelTab.Home) }
+    val selected = selectedTab.takeIf { it in tabs } ?: ChannelTab.Home
+    val tab = tabs.indexOf(selected)
 
     // Home loads the channel page itself (which also fills the header); the other tabs are
     // separate browse calls. Each tab keeps its own model, so switching back is instant.
@@ -101,7 +152,7 @@ fun ChannelScreen(
         },
         { Graph.api.continuation(it) },
     )
-    val vm = if (selected == ChannelTab.Home || selected == ChannelTab.Posts || selected == ChannelTab.About) {
+    val vm = if (selected.params == null) {
         home
     } else {
         rememberFeedViewModel(
@@ -115,10 +166,10 @@ fun ChannelScreen(
         Column {
             ChannelHeader(header)
             PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
-                TABS.forEachIndexed { i, t ->
+                tabs.forEachIndexed { i, t ->
                     Tab(
                         selected = tab == i,
-                        onClick = { tab = i },
+                        onClick = { selectedTab = t },
                         text = { Text(t.label) },
                         modifier = Modifier.pressBounce(0.94f),
                     )
@@ -135,6 +186,10 @@ fun ChannelScreen(
         ChannelTab.About -> {
             val about: AboutViewModel = viewModel(key = "channel:$channelId:About") { AboutViewModel(channelId) }
             AboutList(about, headerContent)
+        }
+        ChannelTab.Releases -> {
+            val releases: ReleasesViewModel = viewModel(key = "channel:$channelId:Releases") { ReleasesViewModel(channelId) }
+            ReleasesList(releases, headerContent, musicActions)
         }
         else -> FeedList(
             vm, onVideo, onChannel,
@@ -218,6 +273,52 @@ private fun ChannelHeader(vm: ChannelHeaderViewModel) {
                 }
                 Text(if (vm.subscribed) "Subscribed" else "Subscribe")
             }
+        }
+    }
+}
+
+@Composable
+private fun ReleasesList(vm: ReleasesViewModel, header: @Composable () -> Unit, actions: MusicActions) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { header() }
+        val list = vm.releases
+        when {
+            list == null && vm.error != null -> item { ErrorState(vm.error!!, { vm.load() }, Modifier.height(280.dp)) }
+            list == null -> item { CenteredLoading(Modifier.height(280.dp)) }
+            list.isEmpty() -> item {
+                Text("No releases", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(24.dp))
+            }
+            else -> items(list.chunked(2)) { row ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    row.forEach { release ->
+                        Box(Modifier.weight(1f)) {
+                            ReleaseCard(release) { actions.openPage(release.id, null) }
+                        }
+                    }
+                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+        item { Spacer(Modifier.height(96.dp)) }
+    }
+}
+
+@Composable
+private fun ReleaseCard(item: dev.materialtube.data.MusicItem, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().bounceClick(pressedScale = 0.95f, onClick = onClick)) {
+        AsyncImage(
+            model = item.thumbnail,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        item.subtitle?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

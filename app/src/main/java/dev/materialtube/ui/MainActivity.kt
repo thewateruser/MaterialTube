@@ -66,6 +66,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import dev.materialtube.ui.screens.music.MusicActions
+import dev.materialtube.ui.screens.music.MusicCollectionScreen
+import dev.materialtube.ui.screens.music.MusicScreen
+import dev.materialtube.ui.screens.music.NowPlayingScreen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -262,9 +271,18 @@ class MainActivity : ComponentActivity() {
             ShortsQueue.items = list
             nav.navigate("shorts/$index")
         }
-        val showChrome = !onWatch && !inPip && route != "signin" && route?.startsWith("shorts") != true
+        val onMusicPlayer = route == "music/player"
+        val showChrome = !onWatch && !inPip && route != "signin" && route?.startsWith("shorts") != true && !onMusicPlayer
 
-        val miniVisible = !onWatch && !inPip && route != "signin" && route?.startsWith("shorts") != true
+        val miniVisible = !onWatch && !inPip && route != "signin" && route?.startsWith("shorts") != true && !onMusicPlayer
+        val musicActions = remember(nav) {
+            MusicActions(
+                openPage = { id, params ->
+                    nav.navigate("music/page/$id" + (params?.let { "?params=" + URLEncoder.encode(it, "UTF-8") } ?: ""))
+                },
+                openPlayer = { nav.navigate("music/player") { launchSingleTop = true } },
+            )
+        }
 
         Box(Modifier.fillMaxSize()) {
         Scaffold(
@@ -334,6 +352,31 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 composable("search") { TopLevel("Search") { SearchScreen(openVideo, openChannel, openShorts) } }
+                composable("music") { TopLevel("Music") { MusicScreen(musicActions, onSignIn = { nav.navigate("signin") }) } }
+                composable(
+                    "music/page/{id}?params={params}",
+                    listOf(
+                        navArgument("id") { type = NavType.StringType },
+                        navArgument("params") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    ),
+                ) { e ->
+                    val params = e.arguments?.getString("params")?.let { URLDecoder.decode(it, "UTF-8") }
+                    Sub("", nav) { MusicCollectionScreen(e.arguments!!.getString("id")!!, params, musicActions) }
+                }
+                composable(
+                    "music/player",
+                    enterTransition = { slideInVertically(tween(340, easing = EmphasizedDecelerate)) { it / 2 } + fadeIn(tween(220)) },
+                    popExitTransition = { slideOutVertically(tween(260)) { it / 2 } + fadeOut(tween(200)) },
+                ) {
+                    NowPlayingScreen(
+                        onClose = { nav.popBackStack() },
+                        onArtist = { id -> nav.navigate("music/page/$id") },
+                        onWatchVideo = { id ->
+                            val np = PlayerController.nowPlaying.value
+                            openVideo(VideoItem(id = id, title = np?.title.orEmpty(), channel = np?.channel, channelId = np?.channelId))
+                        },
+                    )
+                }
                 composable("library") {
                     TopLevel("Library") {
                         LibraryScreen(
@@ -347,7 +390,7 @@ class MainActivity : ComponentActivity() {
                     Sub("Settings", nav) { SettingsScreen(onSignIn = { nav.navigate("signin") }) }
                 }
                 composable("channel/{id}", listOf(navArgument("id") { type = NavType.StringType })) { e ->
-                    Sub("", nav) { ChannelScreen(e.arguments!!.getString("id")!!, openVideo, openChannel, openShorts) }
+                    Sub("", nav) { ChannelScreen(e.arguments!!.getString("id")!!, openVideo, openChannel, openShorts, musicActions) }
                 }
                 composable(
                     "browse/{id}/{title}",
@@ -391,7 +434,13 @@ class MainActivity : ComponentActivity() {
         FloatingMiniPlayer(
             visible = miniVisible,
             bottomInset = if (showChrome) 80.dp else 0.dp,
-            onOpen = { id -> nav.navigate("watch/$id") { launchSingleTop = true } },
+            onOpen = { id ->
+                if (PlayerController.nowPlaying.value?.music == true) {
+                    nav.navigate("music/player") { launchSingleTop = true }
+                } else {
+                    nav.navigate("watch/$id") { launchSingleTop = true }
+                }
+            },
         )
         }
     }
@@ -455,6 +504,7 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 private val TABS = listOf(
     Tab("home", "Home", Icons.Filled.Home),
     Tab("subs", "Subscriptions", Icons.Filled.Subscriptions),
+    Tab("music", "Music", Icons.Filled.LibraryMusic),
     Tab("search", "Search", Icons.Filled.Search),
     Tab("library", "Library", Icons.Filled.VideoLibrary),
 )
@@ -480,7 +530,7 @@ private fun BottomBar(nav: NavHostController, route: String?) {
     }
 }
 
-private val TAB_ROUTES = setOf("home", "subs", "search", "library")
+private val TAB_ROUTES = setOf("home", "subs", "music", "search", "library")
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch() =
     initialState.destination.route in TAB_ROUTES && targetState.destination.route in TAB_ROUTES
@@ -564,17 +614,27 @@ private fun FloatingMiniPlayer(visible: Boolean, bottomInset: Dp, onOpen: (Strin
                     }
                     .pointerInput(videoId) { detectTapGestures(onTap = { onOpen(videoId) }) },
             ) {
-                AndroidView(
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            player = PlayerController.player
-                            useController = false
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        }
-                    },
-                    onRelease = { it.player = null },
-                    modifier = Modifier.fillMaxSize(),
-                )
+                if (current?.music == true) {
+                    // Music plays audio only: show the artwork.
+                    AsyncImage(
+                        model = current?.thumbnail,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    AndroidView(
+                        factory = { ctx ->
+                            PlayerView(ctx).apply {
+                                player = PlayerController.player
+                                useController = false
+                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            }
+                        },
+                        onRelease = { it.player = null },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -586,6 +646,13 @@ private fun FloatingMiniPlayer(visible: Boolean, bottomInset: Dp, onOpen: (Strin
                     modifier = Modifier.align(Alignment.BottomStart).padding(4.dp).size(36.dp).pressBounce(0.82f),
                 ) {
                     Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/pause", Modifier.size(20.dp))
+                }
+                if (current?.music == true) {
+                    FilledTonalIconButton(
+                        onClick = { PlayerController.next() },
+                        shapes = IconButtonDefaults.shapes(),
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).size(36.dp).pressBounce(0.82f),
+                    ) { Icon(Icons.Filled.SkipNext, "Next", Modifier.size(20.dp)) }
                 }
                 FilledTonalIconButton(
                     onClick = { PlayerController.close() },

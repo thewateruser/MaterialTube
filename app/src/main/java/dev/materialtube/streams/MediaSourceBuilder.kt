@@ -75,7 +75,8 @@ object MediaSourceBuilder {
             .build()
     }
 
-    fun build(info: StreamInfo, maxHeight: Int, metadata: MediaMetadata): BuiltSource {
+    /** [audioOnly]: just the audio track (music), which saves data and battery. */
+    fun build(info: StreamInfo, maxHeight: Int, metadata: MediaMetadata, audioOnly: Boolean = false): BuiltSource {
         val item = MediaItem.Builder()
             .setMediaId(info.id)
             .setMediaMetadata(metadata)
@@ -102,7 +103,7 @@ object MediaSourceBuilder {
         if (audio.isNotEmpty()) {
             val bestAudio = pickAudio(audio)
             val audioSource = dash(bestAudio, info, item.setUri(bestAudio.content).build())
-            if (heights.isEmpty()) return BuiltSource(audioSource, null, emptyList())
+            if (heights.isEmpty() || audioOnly) return BuiltSource(audioSource, null, emptyList())
             val target = heights.firstOrNull { it <= maxHeight } ?: heights.last()
             val video = videoOnly.filter { quality(it) == target }.minBy { codecRank(it.codec) }
             val videoSource = dash(video, info, item.setUri(video.content).build())

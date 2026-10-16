@@ -15,6 +15,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import dev.materialtube.Graph
 import dev.materialtube.data.VideoDetails
+import dev.materialtube.data.MusicItem
 import dev.materialtube.data.VideoItem
 import dev.materialtube.data.innertube.Parser
 import dev.materialtube.data.sponsorblock.Segment
@@ -49,6 +50,8 @@ data class NowPlaying(
     val details: VideoDetails? = null,
     val height: Int? = null,
     val availableHeights: List<Int> = emptyList(),
+    /** Playing from the music queue (audio only, square artwork, now-playing screen). */
+    val music: Boolean = false,
 )
 
 /**
@@ -108,8 +111,25 @@ object PlayerController {
         scope.launch { tick() }
     }
 
-    fun play(videoId: String, hint: VideoItem? = null) {
-        if (_nowPlaying.value?.videoId == videoId && player.mediaItemCount > 0 && _error.value == null) return
+    fun play(videoId: String, hint: VideoItem? = null) = play(videoId, hint, fromQueue = false)
+
+    private fun play(videoId: String, hint: VideoItem?, fromQueue: Boolean) {
+        if (!fromQueue) {
+            // Watching a video replaces the music queue (if the same song isn't already playing).
+            if (_nowPlaying.value?.videoId == videoId && player.mediaItemCount > 0 && _error.value == null) {
+                if (_nowPlaying.value?.music == true) {
+                    clearQueue()
+                    update { it.copy(music = false) }
+                    loadJob?.cancel()
+                    loadJob = scope.launch { load(videoId, player.currentPosition, Graph.prefs.maxQuality) }
+                }
+                return
+            }
+            clearQueue()
+        } else if (_nowPlaying.value?.videoId == videoId && player.mediaItemCount > 0 && _error.value == null) {
+            return
+        }
+        audioOnly = fromQueue
         finishStats("paused")
         loadJob?.cancel()
         sideJobs.forEach { it.cancel() }
@@ -128,6 +148,7 @@ object PlayerController {
             channel = hint?.channel,
             channelId = hint?.channelId,
             thumbnail = hint?.thumbnail ?: Parser.thumbFor(videoId),
+            music = fromQueue,
         )
 
         // Signed-in player call: account-bound history tracking + clean details.
@@ -156,6 +177,116 @@ object PlayerController {
         loadJob = scope.launch { load(videoId, startPositionMs = 0, maxHeight = Graph.prefs.maxQuality) }
     }
 
+    // --- Music queue ---------------------------------------------------------------------
+
+    private var audioOnly = false
+    private val _queue = MutableStateFlow<List<MusicItem>>(emptyList())
+    /** Songs queued in the music player (empty when watching a video). */
+    val queue: StateFlow<List<MusicItem>> = _queue
+    private val _queueIndex = MutableStateFlow(-1)
+    val queueIndex: StateFlow<Int> = _queueIndex
+    /** Continuation for more queue items (radio or the rest of a long playlist). */
+    private var queueToken: String? = null
+    private var queuePlaylistId: String? = null
+    private var queueJob: Job? = null
+
+    /**
+     * Plays [items] as a music queue from [start]. When [extend] is set, the queue keeps going
+     * with YouTube Music's radio for the first song (or the rest of [playlistId]).
+     */
+    fun playMusic(items: List<MusicItem>, start: Int = 0, playlistId: String? = null, extend: Boolean = true) {
+        val songs = items.filter { it.type.playable }
+        if (songs.isEmpty()) return
+        val first = items.getOrNull(start)?.takeIf { it.type.playable } ?: songs.first()
+        _queue.value = songs
+        _queueIndex.value = songs.indexOf(first).coerceAtLeast(0)
+        queueToken = null
+        queuePlaylistId = null
+        queueJob?.cancel()
+        playQueueItem()
+        if (extend) {
+            queueJob = scope.launch {
+                val (more, token) = runCatching {
+                    withContext(Dispatchers.IO) { Graph.music.queue(first.id, playlistId) }
+                }.getOrNull() ?: return@launch
+                appendToQueue(more)
+                queueToken = token
+                queuePlaylistId = playlistId ?: "RDAMVM${first.id}"
+            }
+        }
+    }
+
+    /** A playlist/album: fetch its tracks via the queue endpoint and play them. */
+    fun playPlaylist(playlistId: String, shuffle: Boolean = false) {
+        queueJob?.cancel()
+        queueJob = scope.launch {
+            val (items, token) = runCatching {
+                withContext(Dispatchers.IO) { Graph.music.queue(null, playlistId) }
+            }.getOrNull() ?: run {
+                _messages.tryEmit("Couldn't load this playlist")
+                return@launch
+            }
+            val list = if (shuffle) items.shuffled() else items
+            playMusic(list, 0, extend = false)
+            queueToken = if (shuffle) null else token
+            queuePlaylistId = playlistId
+        }
+    }
+
+    private fun appendToQueue(more: List<MusicItem>) {
+        val have = _queue.value.map { it.id }.toHashSet()
+        _queue.value = _queue.value + more.filter { it.type.playable && have.add(it.id) }
+    }
+
+    private fun playQueueItem() {
+        val item = _queue.value.getOrNull(_queueIndex.value) ?: return
+        play(item.id, item.toVideo(), fromQueue = true)
+        // Running low: fetch more radio / playlist items.
+        val token = queueToken
+        val pl = queuePlaylistId
+        if (token != null && pl != null && _queueIndex.value >= _queue.value.size - 3 && queueJob?.isActive != true) {
+            queueJob = scope.launch {
+                val (more, next) = runCatching { withContext(Dispatchers.IO) { Graph.music.queueMore(token, pl) } }
+                    .getOrNull() ?: return@launch
+                appendToQueue(more)
+                queueToken = next.takeIf { it != token }
+            }
+        }
+    }
+
+    val hasNext get() = _queueIndex.value in 0 until _queue.value.size - 1
+
+    fun next() {
+        if (!hasNext) return
+        _queueIndex.value += 1
+        playQueueItem()
+    }
+
+    /** Restarts the song, or goes to the previous one when near its start. */
+    fun previous() {
+        if (player.currentPosition > 3_000 || _queueIndex.value <= 0) {
+            player.seekTo(0)
+            return
+        }
+        _queueIndex.value -= 1
+        playQueueItem()
+    }
+
+    fun playAt(index: Int) {
+        if (index !in _queue.value.indices) return
+        _queueIndex.value = index
+        playQueueItem()
+    }
+
+    private fun clearQueue() {
+        queueJob?.cancel()
+        _queue.value = emptyList()
+        _queueIndex.value = -1
+        queueToken = null
+        queuePlaylistId = null
+        audioOnly = false
+    }
+
     /** Switches quality, keeping the current position. */
     fun setQuality(height: Int) {
         val current = _nowPlaying.value ?: return
@@ -172,6 +303,7 @@ object PlayerController {
     }
 
     fun close() {
+        clearQueue()
         finishStats("paused")
         loadJob?.cancel()
         sideJobs.forEach { it.cancel() }
@@ -244,10 +376,10 @@ object PlayerController {
             val metadata = MediaMetadata.Builder()
                 .setTitle(np?.title ?: streamInfo.name)
                 .setArtist(np?.channel ?: streamInfo.uploaderName)
-                .setArtworkUri(Uri.parse(Parser.thumbFor(videoId)))
+                .setArtworkUri(Uri.parse(np?.thumbnail ?: Parser.thumbFor(videoId)))
                 .build()
             val built = withContext(Dispatchers.IO) {
-                MediaSourceBuilder.build(streamInfo, maxHeight, metadata)
+                MediaSourceBuilder.build(streamInfo, maxHeight, metadata, audioOnly)
             }
             update { it.copy(height = built.height, availableHeights = built.availableHeights) }
             player.setMediaSource(built.source, startPositionMs)
@@ -290,7 +422,10 @@ object PlayerController {
         }
 
         override fun onPlaybackStateChanged(state: Int) {
-            if (state == Player.STATE_ENDED) finishStats("ended")
+            if (state == Player.STATE_ENDED) {
+                finishStats("ended")
+                if (_nowPlaying.value?.music == true && hasNext) next()
+            }
         }
 
         override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {

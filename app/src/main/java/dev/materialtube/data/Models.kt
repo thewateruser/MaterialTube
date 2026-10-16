@@ -92,6 +92,9 @@ enum class ChannelTab(val label: String, val params: String?) {
     /** Posts and About come from their own requests (see InnerTube.channelPosts / channelAbout). */
     Posts("Posts", null),
     About("About", null),
+
+    /** Musicians' albums and singles (InnerTube.channelReleases); only shown when present. */
+    Releases("Releases", null),
 }
 
 /** A channel community post. */
