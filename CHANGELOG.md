@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1
+- **Music sign-in**: YouTube Music's web client didn't accept the app's sign-in, so Music showed
+  general recommendations and Library failed. Music now uses whichever YouTube Music client
+  (web, Android or iOS app) accepts your account, checked with YouTube's own "logged in" flag.
+- Library → Liked music works through the TV client if no Music client accepts the account.
+- Settings → Copy diagnostics includes a Music section.
+
 ## 0.8.0 — Music
 - **Music tab** (YouTube Music): Home with your music recommendations, Explore (new albums and
   singles, trending, new music videos), Search (all, songs, videos, albums, artists, playlists)

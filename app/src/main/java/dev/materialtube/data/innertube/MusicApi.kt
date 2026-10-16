@@ -155,6 +155,17 @@ class MusicApi(private val api: InnerTube) {
         throw InnerTubeException("YouTube Music didn't accept your sign-in for this. Settings → Copy diagnostics shows what it returned.")
     }
 
+    private fun rendererCounts(json: Any?, out: MutableMap<String, Int> = sortedMapOf()): Map<String, Int> {
+        when (json) {
+            is JSONObject -> json.keys().forEach { k ->
+                if (k.endsWith("Renderer") || k.endsWith("ViewModel")) out[k] = (out[k] ?: 0) + 1
+                rendererCounts(json.opt(k), out)
+            }
+            is org.json.JSONArray -> for (i in 0 until json.length()) rendererCounts(json.opt(i), out)
+        }
+        return out
+    }
+
     /** What each Music client returns for this account (for Settings → Copy diagnostics). */
     fun diagnostics(): String = buildString {
         append("== Music sign-in (signed in: ${api.isSignedIn})\n")
@@ -169,6 +180,7 @@ class MusicApi(private val api: InnerTube) {
                         .append(page.shelves.size).append(" shelves, ")
                         .append(page.shelves.sumOf { it.items.size }).append(" items ")
                         .append(page.shelves.take(3).map { it.title })
+                    if (page.shelves.isEmpty()) append(" renderers=").append(rendererCounts(json))
                 }
                 append('\n')
             }
