@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.6
+- Music tab is now just **Library** and **Search**. Home and Explore are gone: with the app's
+  sign-in, YouTube Music only gives general picks there.
+
 ## 0.8.5
 - Music Home and Explore load straight away again: YouTube Music's page shows first, and your
   personal shelves load separately ("Loading your music…") and go on top when ready. They can

@@ -66,9 +66,9 @@ Google's API hostnames (`oauth2.googleapis.com`, `youtubei.googleapis.com`).
 
 ## Music
 
-A Music tab built on YouTube Music: personalised home, explore, search, library, album/artist
-pages, audio-only playback with radio and an up-next queue, and a Releases tab on musicians'
-channels.
+A Music tab built on YouTube Music: your library (liked music, playlists) and search, album/artist
+pages, audio-only playback with your radio and an up-next queue, and a Releases tab on
+musicians' channels.
 
 ## Design
 

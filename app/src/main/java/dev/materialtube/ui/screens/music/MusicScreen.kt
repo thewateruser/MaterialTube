@@ -64,9 +64,9 @@ import dev.materialtube.ui.components.CenteredLoading
 import dev.materialtube.ui.components.ErrorState
 import dev.materialtube.ui.components.pressBounce
 
-private val MUSIC_TABS = listOf("Home", "Explore", "Search", "Library")
+private val MUSIC_TABS = listOf("Library", "Search")
 
-/** The Music tab: YouTube Music home (your recommendations), explore, search and library. */
+/** The Music tab: your YouTube Music library and search. */
 @Composable
 fun MusicScreen(actions: MusicActions, onSignIn: () -> Unit) {
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -78,29 +78,8 @@ fun MusicScreen(actions: MusicActions, onSignIn: () -> Unit) {
         }
         Box(Modifier.weight(1f)) {
             when (tab) {
-                0 -> {
-                    val signedIn by Graph.signedIn.collectAsState()
-                    val vm: MusicPageViewModel = viewModel(key = "music-home:$signedIn") {
-                        MusicPageViewModel(
-                            { Graph.music.home() },
-                            { Graph.music.more(it) },
-                            extra = if (signedIn) ({ Graph.music.personalHomeShelves() }) else null,
-                        )
-                    }
-                    MusicPageList(vm, MusicLayout.Feed, actions, header = { PersonalStatus(vm) })
-                }
-                1 -> {
-                    val vm: MusicPageViewModel = viewModel(key = "music-explore") {
-                        MusicPageViewModel(
-                            { Graph.music.explore() },
-                            { Graph.music.more(it) },
-                            extra = if (Graph.signedIn.value) ({ Graph.music.personalExploreShelves() }) else null,
-                        )
-                    }
-                    MusicPageList(vm, MusicLayout.Feed, actions, header = { PersonalStatus(vm) })
-                }
-                2 -> MusicSearch(actions)
-                else -> MusicLibrary(actions, onSignIn)
+                0 -> MusicLibrary(actions, onSignIn)
+                else -> MusicSearch(actions)
             }
         }
     }
@@ -320,30 +299,3 @@ private fun CollectionHeader(page: dev.materialtube.data.MusicPage, artist: Bool
     }
 }
 
-@Composable
-private fun NoticeCard(text: String) {
-    androidx.compose.material3.Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
-    ) {
-        Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
-    }
-}
-
-/** "Loading your music…" while the personal shelves load, or why they didn't. */
-@Composable
-private fun PersonalStatus(vm: MusicPageViewModel) {
-    when {
-        vm.extraLoading -> Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            LoadingIndicator(Modifier.size(28.dp))
-            Spacer(Modifier.width(10.dp))
-            Text("Loading your music…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        vm.extraNotice != null -> NoticeCard(vm.extraNotice!!)
-    }
-}
