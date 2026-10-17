@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.5
+- Music Home and Explore load straight away again: YouTube Music's page shows first, and your
+  personal shelves load separately ("Loading your music…") and go on top when ready. They can
+  no longer hold the page up: each request gives up after 12s, the whole step after 20s, and if
+  they fail a card says why.
+
 ## 0.8.4
 - Personal Music Home/Explore now use the same liked-songs source as Library (YouTube Music's
   liked songs, else your liked videos), so they have songs to build from. Radios are seeded

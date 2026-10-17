@@ -97,24 +97,27 @@ class MusicApi(private val api: InnerTube) {
      * Signed in: the account's own music (the TV app's Music section) first, then YouTube
      * Music's general home. Signed out: just the general home.
      */
-    fun home(): MusicPage {
-        if (!api.isSignedIn) return browse("FEmusic_home")
-        val general = pool.submit<MusicPage?> { runCatching { browse("FEmusic_home") }.getOrNull() }
+    /** YouTube Music's home (general; the personal shelves load separately). */
+    fun home(): MusicPage = browse("FEmusic_home")
+
+    /** The account's own music shelves for Home; throws with the reason when there are none. */
+    fun personalHomeShelves(): List<MusicShelf> {
         val report = StringBuilder()
-        val personal = runCatching { personalHome(report) }
-            .onFailure { report.append("failed: ").append(it.message) }
-            .getOrDefault(emptyList())
-        val g = general.get()
-        val shelves = personal + g?.shelves.orEmpty()
-        if (shelves.isEmpty()) return browse("FEmusic_home")
-        val notice = if (personal.isEmpty()) "Couldn't load your personal music ($report). Showing YouTube Music's general picks." else null
-        return MusicPage(shelves, g?.continuation, notice = notice)
+        val shelves = personalHome(report)
+        if (shelves.isEmpty()) throw InnerTubeException(report.toString())
+        return shelves
     }
+
+    fun personalExploreShelves(): List<MusicShelf> = personalExplore()
 
     /** Requests for the personal pages run side by side. */
     private val pool = java.util.concurrent.Executors.newFixedThreadPool(6) { r -> Thread(r, "music").apply { isDaemon = true } }
 
     private fun <T> async(block: () -> T): java.util.concurrent.Future<T?> = pool.submit<T?> { runCatching(block).getOrNull() }
+
+    /** A personal request's result, or null if it fails or takes too long (never blocks for long). */
+    private fun <T> java.util.concurrent.Future<T?>.await(): T? =
+        runCatching { get(12, java.util.concurrent.TimeUnit.SECONDS) }.getOrElse { cancel(true); null }
 
     /**
      * Songs the account liked (newest first), through the TV client: YouTube Music's liked songs,
@@ -155,13 +158,13 @@ class MusicApi(private val api: InnerTube) {
         val seeds = liked.filter(::looksLikeMusic).ifEmpty { liked }.take(3)
         val radios = seeds.map { song -> song to async { tvRadio(song.id).first } }
         val out = mutableListOf<MusicShelf>()
-        val mix = supermix.get()
+        val mix = supermix.await()
         report.append("supermix: ").append(mix?.size ?: "failed")
         mix?.takeIf { it.size >= 4 }?.let { out += MusicShelf("Quick picks", it.take(24)) }
         if (liked.isNotEmpty()) out += MusicShelf("Listen again", liked.take(16))
-        mixes.get()?.takeIf { it.isNotEmpty() }?.let { out += MusicShelf("Your mixes", it.distinctBy { m -> m.id }) }
+        mixes.await()?.takeIf { it.isNotEmpty() }?.let { out += MusicShelf("Your mixes", it.distinctBy { m -> m.id }) }
         radios.forEach { (song, radio) ->
-            radio.get()?.filter { it.id != song.id }?.takeIf { it.size >= 4 }?.let {
+            radio.await()?.filter { it.id != song.id }?.takeIf { it.size >= 4 }?.let {
                 out += MusicShelf("Because you like ${song.title}", it.take(16))
             }
         }
@@ -184,7 +187,7 @@ class MusicApi(private val api: InnerTube) {
         val releases = mutableListOf<MusicItem>()
         val artistCards = mutableListOf<MusicItem>()
         pages.forEach { (artist, future) ->
-            val page = future.get() ?: return@forEach
+            val page = future.await() ?: return@forEach
             val singles = page.shelves.firstOrNull { it.title?.contains("Single", true) == true }?.items.orEmpty()
             val albums = page.shelves.firstOrNull { it.title?.startsWith("Album", true) == true }?.items.orEmpty()
             val own = (singles.take(2) + albums.take(1)).filter { it.type.isRelease }
@@ -198,18 +201,7 @@ class MusicApi(private val api: InnerTube) {
         )
     }
 
-    fun explore(): MusicPage {
-        if (!api.isSignedIn) return browse("FEmusic_explore")
-        val general = async { browse("FEmusic_explore") }
-        val personal = runCatching { personalExplore() }
-        val g = general.get()
-        val notice = when {
-            personal.isFailure -> "Couldn't load music for you (${personal.exceptionOrNull()?.message}). Showing general picks."
-            personal.getOrNull().isNullOrEmpty() -> "Couldn't find releases from artists you like. Showing general picks."
-            else -> null
-        }
-        return MusicPage(personal.getOrDefault(emptyList()) + g?.shelves.orEmpty(), g?.continuation, notice = notice)
-    }
+    fun explore(): MusicPage = browse("FEmusic_explore")
 
     fun newReleases(): MusicPage = browse("FEmusic_new_releases_albums")
 

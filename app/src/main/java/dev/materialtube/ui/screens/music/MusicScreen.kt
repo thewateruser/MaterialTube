@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -80,15 +81,23 @@ fun MusicScreen(actions: MusicActions, onSignIn: () -> Unit) {
                 0 -> {
                     val signedIn by Graph.signedIn.collectAsState()
                     val vm: MusicPageViewModel = viewModel(key = "music-home:$signedIn") {
-                        MusicPageViewModel({ Graph.music.home() }, { Graph.music.more(it) })
+                        MusicPageViewModel(
+                            { Graph.music.home() },
+                            { Graph.music.more(it) },
+                            extra = if (signedIn) ({ Graph.music.personalHomeShelves() }) else null,
+                        )
                     }
-                    MusicPageList(vm, MusicLayout.Feed, actions, header = { vm.page?.notice?.let { NoticeCard(it) } })
+                    MusicPageList(vm, MusicLayout.Feed, actions, header = { PersonalStatus(vm) })
                 }
                 1 -> {
                     val vm: MusicPageViewModel = viewModel(key = "music-explore") {
-                        MusicPageViewModel({ Graph.music.explore() }, { Graph.music.more(it) })
+                        MusicPageViewModel(
+                            { Graph.music.explore() },
+                            { Graph.music.more(it) },
+                            extra = if (Graph.signedIn.value) ({ Graph.music.personalExploreShelves() }) else null,
+                        )
                     }
-                    MusicPageList(vm, MusicLayout.Feed, actions, header = { vm.page?.notice?.let { NoticeCard(it) } })
+                    MusicPageList(vm, MusicLayout.Feed, actions, header = { PersonalStatus(vm) })
                 }
                 2 -> MusicSearch(actions)
                 else -> MusicLibrary(actions, onSignIn)
@@ -320,5 +329,21 @@ private fun NoticeCard(text: String) {
         modifier = Modifier.fillMaxWidth().padding(16.dp),
     ) {
         Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
+    }
+}
+
+/** "Loading your music…" while the personal shelves load, or why they didn't. */
+@Composable
+private fun PersonalStatus(vm: MusicPageViewModel) {
+    when {
+        vm.extraLoading -> Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LoadingIndicator(Modifier.size(28.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("Loading your music…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        vm.extraNotice != null -> NoticeCard(vm.extraNotice!!)
     }
 }

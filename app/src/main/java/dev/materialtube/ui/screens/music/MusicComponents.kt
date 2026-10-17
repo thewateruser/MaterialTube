@@ -53,12 +53,23 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Loads a YouTube Music page (and its continuations). */
 class MusicPageViewModel(
     private val first: () -> MusicPage,
     private val next: ((String) -> MusicPage)?,
+    /**
+     * Extra shelves loaded separately and put on top when ready (the personal ones). They never
+     * hold up the page: it shows as soon as [first] loads, and these are dropped after a timeout.
+     */
+    private val extra: (() -> List<MusicShelf>)? = null,
 ) : ViewModel() {
+    /** Why the extra shelves didn't load, if they didn't. */
+    var extraNotice by mutableStateOf<String?>(null)
+        private set
+    var extraLoading by mutableStateOf(false)
+        private set
     var page by mutableStateOf<MusicPage?>(null)
         private set
     var error by mutableStateOf<String?>(null)
@@ -84,6 +95,33 @@ class MusicPageViewModel(
                 error = e.message ?: "Couldn't load"
             } finally {
                 loading = false
+            }
+        }
+        loadExtra()
+    }
+
+    private fun loadExtra() {
+        val load = extra ?: return
+        extraLoading = true
+        extraNotice = null
+        viewModelScope.launch {
+            try {
+                val shelves = withTimeoutOrNull(20_000) { kotlinx.coroutines.runInterruptible(Dispatchers.IO) { load() } }
+                when {
+                    shelves == null -> extraNotice = "Your personal music took too long to load."
+                    shelves.isEmpty() -> extraNotice = "Couldn't find personal music for your account."
+                    else -> {
+                        // Wait for the main page if it's still loading, then put these on top.
+                        while (page == null && error == null) kotlinx.coroutines.delay(100)
+                        page = (page ?: MusicPage(emptyList())).let { it.copy(shelves = shelves + it.shelves) }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                extraNotice = "Couldn't load your personal music: ${e.message}"
+            } finally {
+                extraLoading = false
             }
         }
     }
