@@ -50,6 +50,8 @@ data class MusicPage(
     val thumbnail: String? = null,
     /** Playlist that plays the whole album/playlist. */
     val playlistId: String? = null,
+    /** Shown above the page, e.g. why personal shelves couldn't load. */
+    val notice: String? = null,
 )
 
 enum class MusicSearchFilter(val label: String, val params: String?) {

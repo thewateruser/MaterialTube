@@ -82,13 +82,13 @@ fun MusicScreen(actions: MusicActions, onSignIn: () -> Unit) {
                     val vm: MusicPageViewModel = viewModel(key = "music-home:$signedIn") {
                         MusicPageViewModel({ Graph.music.home() }, { Graph.music.more(it) })
                     }
-                    MusicPageList(vm, MusicLayout.Feed, actions)
+                    MusicPageList(vm, MusicLayout.Feed, actions, header = { vm.page?.notice?.let { NoticeCard(it) } })
                 }
                 1 -> {
                     val vm: MusicPageViewModel = viewModel(key = "music-explore") {
                         MusicPageViewModel({ Graph.music.explore() }, { Graph.music.more(it) })
                     }
-                    MusicPageList(vm, MusicLayout.Feed, actions)
+                    MusicPageList(vm, MusicLayout.Feed, actions, header = { vm.page?.notice?.let { NoticeCard(it) } })
                 }
                 2 -> MusicSearch(actions)
                 else -> MusicLibrary(actions, onSignIn)
@@ -308,5 +308,17 @@ private fun CollectionHeader(page: dev.materialtube.data.MusicPage, artist: Bool
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun NoticeCard(text: String) {
+    androidx.compose.material3.Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+    ) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
     }
 }

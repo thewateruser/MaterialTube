@@ -100,11 +100,15 @@ class MusicApi(private val api: InnerTube) {
     fun home(): MusicPage {
         if (!api.isSignedIn) return browse("FEmusic_home")
         val general = pool.submit<MusicPage?> { runCatching { browse("FEmusic_home") }.getOrNull() }
-        val personal = personalHome()
+        val report = StringBuilder()
+        val personal = runCatching { personalHome(report) }
+            .onFailure { report.append("failed: ").append(it.message) }
+            .getOrDefault(emptyList())
         val g = general.get()
         val shelves = personal + g?.shelves.orEmpty()
         if (shelves.isEmpty()) return browse("FEmusic_home")
-        return MusicPage(shelves, g?.continuation)
+        val notice = if (personal.isEmpty()) "Couldn't load your personal music ($report). Showing YouTube Music's general picks." else null
+        return MusicPage(shelves, g?.continuation, notice = notice)
     }
 
     /** Requests for the personal pages run side by side. */
@@ -112,9 +116,17 @@ class MusicApi(private val api: InnerTube) {
 
     private fun <T> async(block: () -> T): java.util.concurrent.Future<T?> = pool.submit<T?> { runCatching(block).getOrNull() }
 
-    /** Songs the account liked in YouTube Music (newest first), through the TV client. */
-    private fun likedSongs(): List<MusicItem> =
-        tv("FEmusic_liked_videos").shelves.flatMap { it.items }.filter { it.type.playable }
+    /**
+     * Songs the account liked (newest first), through the TV client: YouTube Music's liked songs,
+     * or, when that list comes back empty (as it can on the TV client), the liked videos, which
+     * include them. Same sources as Library → Liked music.
+     */
+    private fun likedSongs(): List<MusicItem> {
+        val music = runCatching { tv("FEmusic_liked_videos").shelves.flatMap { it.items }.filter { it.type.playable } }
+            .getOrDefault(emptyList())
+        if (music.isNotEmpty()) return music
+        return tv("VLLL").shelves.flatMap { it.items }.filter { it.type.playable }
+    }
 
     /** A personal queue through the TV client's `next` (e.g. "RDMM", the account's Supermix). */
     private fun tvMix(playlistId: String, seed: String?): List<MusicItem> {
@@ -128,8 +140,11 @@ class MusicApi(private val api: InnerTube) {
      * The account's own music home, built from what the TV client gives this account: its
      * Supermix, its liked songs, its personal radio for them and the mixes on its home feed.
      */
-    private fun personalHome(): List<MusicShelf> {
-        val liked = likedSongs()
+    private fun personalHome(report: StringBuilder = StringBuilder()): List<MusicShelf> {
+        val liked = runCatching { likedSongs() }
+            .onFailure { report.append("liked songs: ").append(it.message).append("; ") }
+            .getOrDefault(emptyList())
+        report.append("liked songs: ").append(liked.size).append("; ")
         val seed = liked.firstOrNull()?.id
         val supermix = async { tvMix("RDMM", seed) }
         val mixes = async {
@@ -137,9 +152,12 @@ class MusicApi(private val api: InnerTube) {
                 .shelves.flatMap { it.items }
                 .filter { it.type == MusicType.Playlist && (it.id.startsWith("VLRD") || it.title.contains("mix", ignoreCase = true)) }
         }
-        val radios = liked.take(3).map { song -> song to async { tvRadio(song.id).first } }
+        val seeds = liked.filter(::looksLikeMusic).ifEmpty { liked }.take(3)
+        val radios = seeds.map { song -> song to async { tvRadio(song.id).first } }
         val out = mutableListOf<MusicShelf>()
-        supermix.get()?.takeIf { it.size >= 4 }?.let { out += MusicShelf("Quick picks", it.take(24)) }
+        val mix = supermix.get()
+        report.append("supermix: ").append(mix?.size ?: "failed")
+        mix?.takeIf { it.size >= 4 }?.let { out += MusicShelf("Quick picks", it.take(24)) }
         if (liked.isNotEmpty()) out += MusicShelf("Listen again", liked.take(16))
         mixes.get()?.takeIf { it.isNotEmpty() }?.let { out += MusicShelf("Your mixes", it.distinctBy { m -> m.id }) }
         radios.forEach { (song, radio) ->
@@ -150,18 +168,29 @@ class MusicApi(private val api: InnerTube) {
         return out
     }
 
+    /** Liked videos can be anything; prefer ones that are clearly music to seed radios. */
+    private fun looksLikeMusic(item: MusicItem): Boolean {
+        val channel = item.subtitle.orEmpty()
+        val title = item.title.lowercase()
+        return channel.endsWith("- Topic") || channel.contains("VEVO", ignoreCase = true) ||
+            listOf("official", "audio", "lyric", "music video", "visualizer", "feat.", "ft.").any { it in title }
+    }
+
     /** New singles and albums from the artists in the account's liked music. */
     private fun personalExplore(): List<MusicShelf> {
-        val artists = likedSongs().flatMap { it.artists }.filter { it.id != null }.distinctBy { it.id }.take(8)
+        // Liked videos can include non-music channels: only channels with releases count.
+        val artists = likedSongs().flatMap { it.artists }.filter { it.id != null }.distinctBy { it.id }.take(12)
         val pages = artists.map { a -> a to async { browse(a.id!!) } }
         val releases = mutableListOf<MusicItem>()
         val artistCards = mutableListOf<MusicItem>()
         pages.forEach { (artist, future) ->
             val page = future.get() ?: return@forEach
-            artistCards += MusicItem(artist.id!!, MusicType.Artist, page.title ?: artist.name, thumbnail = page.thumbnail)
             val singles = page.shelves.firstOrNull { it.title?.contains("Single", true) == true }?.items.orEmpty()
             val albums = page.shelves.firstOrNull { it.title?.startsWith("Album", true) == true }?.items.orEmpty()
-            releases += (singles.take(2) + albums.take(1)).filter { it.type.isRelease }
+            val own = (singles.take(2) + albums.take(1)).filter { it.type.isRelease }
+            if (own.isEmpty()) return@forEach
+            releases += own
+            artistCards += MusicItem(artist.id!!, MusicType.Artist, page.title ?: artist.name, thumbnail = page.thumbnail)
         }
         return listOfNotNull(
             releases.distinctBy { it.id }.takeIf { it.isNotEmpty() }?.let { MusicShelf("New from artists you like", it) },
@@ -172,9 +201,14 @@ class MusicApi(private val api: InnerTube) {
     fun explore(): MusicPage {
         if (!api.isSignedIn) return browse("FEmusic_explore")
         val general = async { browse("FEmusic_explore") }
-        val personal = runCatching { personalExplore() }.getOrDefault(emptyList())
+        val personal = runCatching { personalExplore() }
         val g = general.get()
-        return MusicPage(personal + g?.shelves.orEmpty(), g?.continuation)
+        val notice = when {
+            personal.isFailure -> "Couldn't load music for you (${personal.exceptionOrNull()?.message}). Showing general picks."
+            personal.getOrNull().isNullOrEmpty() -> "Couldn't find releases from artists you like. Showing general picks."
+            else -> null
+        }
+        return MusicPage(personal.getOrDefault(emptyList()) + g?.shelves.orEmpty(), g?.continuation, notice = notice)
     }
 
     fun newReleases(): MusicPage = browse("FEmusic_new_releases_albums")

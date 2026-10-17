@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.4
+- Personal Music Home/Explore now use the same liked-songs source as Library (YouTube Music's
+  liked songs, else your liked videos), so they have songs to build from. Radios are seeded
+  from liked items that look like music.
+- If the personal shelves still can't load, Home/Explore say why at the top instead of looking
+  generic.
+
 ## 0.8.3
 - **Personal Music Home**: Quick picks from your Supermix, Listen again (your liked songs),
   "Because you like …" radios for your latest liked songs and your mixes; YouTube Music's
